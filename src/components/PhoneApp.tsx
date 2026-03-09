@@ -35,7 +35,11 @@ type Screen =
   | "compose"
   | "messageDetail"
   | "settings"
-  | "addressBook";
+  | "addressBook"
+  | "camera"
+  | "internet"
+  | "dataFolder"
+  | "profile";
 
 interface Message {
   id: string;
@@ -127,6 +131,7 @@ export default function PhoneApp() {
   const [regError, setRegError] = useState("");
   const [regStep, setRegStep] = useState<"email" | "password">("email");
   const [regField, setRegField] = useState<"email" | "password">("email");
+  const [isLogin, setIsLogin] = useState(false);
 
   // Toggle input state
   const [toggleState, setToggleState] = useState<ToggleInputState>(createInitialState());
@@ -257,14 +262,30 @@ export default function PhoneApp() {
 
   // --- D-pad actions ---
   const handleDpadUp = useCallback(() => {
+    if (screen === "compose") {
+      flushToggleInput();
+      setToggleState(createInitialState());
+      const fields: typeof composeField[] = ["to", "subject", "body"];
+      const idx = fields.indexOf(composeField);
+      if (idx > 0) setComposeField(fields[idx - 1]);
+      return;
+    }
     if (isInputActive) return;
     setSelectedIndex((prev) => Math.max(0, prev - 1));
-  }, [isInputActive]);
+  }, [isInputActive, screen, composeField, flushToggleInput]);
 
   const handleDpadDown = useCallback(() => {
+    if (screen === "compose") {
+      flushToggleInput();
+      setToggleState(createInitialState());
+      const fields: typeof composeField[] = ["to", "subject", "body"];
+      const idx = fields.indexOf(composeField);
+      if (idx < fields.length - 1) setComposeField(fields[idx + 1]);
+      return;
+    }
     if (isInputActive) return;
     setSelectedIndex((prev) => prev + 1);
-  }, [isInputActive]);
+  }, [isInputActive, screen, composeField, flushToggleInput]);
 
   const handleDpadLeft = useCallback(() => {
     if (isInputActive) return;
@@ -312,7 +333,13 @@ export default function PhoneApp() {
         }
         break;
       case "compose":
-        handleSendMessage();
+        if (composeField === "to") {
+          flushToggleInput(); setToggleState(createInitialState()); setComposeField("subject");
+        } else if (composeField === "subject") {
+          flushToggleInput(); setToggleState(createInitialState()); setComposeField("body");
+        } else {
+          handleSendMessage();
+        }
         break;
       case "settings":
         if (selectedIndex === 0) setColorMode((prev) => !prev);
@@ -334,13 +361,38 @@ export default function PhoneApp() {
       case "outbox": pushScreen("outbox"); break;
       case "addressBook": pushScreen("addressBook"); break;
       case "settings": pushScreen("settings"); break;
+      case "camera": pushScreen("camera"); break;
+      case "internet": pushScreen("internet"); break;
+      case "data": pushScreen("dataFolder"); break;
+      case "profile": pushScreen("profile"); break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex, pushScreen]);
 
+  // --- Load messages from Supabase ---
+  const loadMessages = useCallback(async (virtualEmail: string) => {
+    try {
+      const { data: inbox } = await supabase.from("messages").select("*").eq("receiver_email", virtualEmail).order("created_at", { ascending: false });
+      if (inbox) setMessages(inbox.map((m: Record<string, unknown>) => ({ ...m, id: String(m.id), is_read: Boolean(m.is_read) } as Message)));
+      const { data: sent } = await supabase.from("messages").select("*").eq("sender_email", virtualEmail).order("created_at", { ascending: false });
+      if (sent) setSentMessages(sent.map((m: Record<string, unknown>) => ({ ...m, id: String(m.id), is_read: true } as Message)));
+    } catch { /* demo mode - no DB */ }
+  }, [supabase]);
+
+  // --- Realtime subscription ---
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel("messages-realtime").on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `receiver_email=eq.${user.virtual_email}` }, (payload: { new: Record<string, unknown> }) => {
+      const msg = { ...payload.new, id: String(payload.new.id), is_read: false } as Message;
+      setMessages((prev) => { if (prev.some((m) => m.id === msg.id)) return prev; return [msg, ...prev]; });
+      setNewMailNotification(true);
+      setTimeout(() => setNewMailNotification(false), 3000);
+    }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, supabase]);
+
   // --- Register ---
   const handleRegister = useCallback(async () => {
-    // Flush any pending input
     let username = regUsername;
     let password = regPassword;
     if (toggleState.text) {
@@ -368,29 +420,40 @@ export default function PhoneApp() {
 
     const virtualEmail = `${username}@j-phone.ne.jp`;
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: `${username}@motephon.app`,
-        password: password,
-      });
-      if (error) {
-        if (error.message.includes("placeholder") || error.message.includes("fetch")) {
-          enterDemoMode(virtualEmail, username); return;
+      if (isLogin) {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: `${username}@motephon.app`, password });
+        if (error) {
+          if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
+          setRegError(error.message); return;
         }
-        setRegError(error.message); return;
-      }
-      if (data.user) {
-        await supabase.from("users").insert({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
-        setUser({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
-        for (const npc of ALL_NPCS) {
-          latencyQueue.enqueue({ id: `welcome-${npc.email}-${Date.now()}`, sender_email: npc.email, receiver_email: virtualEmail, subject: npc.welcomeMessage.subject, body: npc.welcomeMessage.body, is_read: false, created_at: new Date().toISOString() });
+        if (data.user) {
+          const { data: profile } = await supabase.from("users").select("*").eq("id", data.user.id).single();
+          const u: UserProfile = profile ? { id: data.user.id, virtual_email: profile.virtual_email, display_name: profile.display_name } : { id: data.user.id, virtual_email: virtualEmail, display_name: username };
+          setUser(u);
+          await loadMessages(u.virtual_email);
+          setScreen("idle");
         }
-        setScreen("idle");
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email: `${username}@motephon.app`, password });
+        if (error) {
+          if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
+          if (error.message.includes("already registered")) { setRegError("既に登録済み。ﾛｸﾞｲﾝに切替"); setIsLogin(true); return; }
+          setRegError(error.message); return;
+        }
+        if (data.user) {
+          await supabase.from("users").insert({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
+          setUser({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
+          for (const npc of ALL_NPCS) {
+            latencyQueue.enqueue({ id: `welcome-${npc.email}-${Date.now()}`, sender_email: npc.email, receiver_email: virtualEmail, subject: npc.welcomeMessage.subject, body: npc.welcomeMessage.body, is_read: false, created_at: new Date().toISOString() });
+          }
+          setScreen("idle");
+        }
       }
     } catch {
       enterDemoMode(virtualEmail, username);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regUsername, regPassword, regStep, regField, toggleState, supabase, latencyQueue]);
+  }, [regUsername, regPassword, regStep, regField, toggleState, supabase, latencyQueue, isLogin, loadMessages]);
 
   const enterDemoMode = useCallback((virtualEmail: string, displayName: string) => {
     setUser({ id: "demo-user", virtual_email: virtualEmail, display_name: displayName });
@@ -495,13 +558,17 @@ export default function PhoneApp() {
       case "idle": return ["ﾒﾆｭｰ", "開く", "ﾒｰﾙ"];
       case "mainMenu": return ["戻る", "選択", ""];
       case "inbox": case "outbox": return ["戻る", "開く", "新規"];
-      case "compose": return ["戻る", "送信", "添付"];
+      case "compose":
+        if (composeField === "body") return ["戻る", "送信", "添付"];
+        return ["戻る", "次へ", "添付"];
       case "messageDetail": return ["戻る", "", "返信"];
       case "settings": return ["戻る", "変更", ""];
       case "addressBook": return ["戻る", "ﾒｰﾙ", ""];
+      case "camera": case "internet": case "dataFolder": case "profile":
+        return ["戻る", "", ""];
       default: return ["", "", ""];
     }
-  }, [screen]);
+  }, [screen, composeField]);
 
   const handleSoftKeyLeft = useCallback(() => {
     if (screen === "idle") { pushScreen("mainMenu"); return; }
@@ -562,6 +629,10 @@ export default function PhoneApp() {
       case "messageDetail": return renderMessageDetailScreen();
       case "settings": return renderSettingsScreen();
       case "addressBook": return renderAddressBookScreen();
+      case "camera": return renderCameraScreen();
+      case "internet": return renderInternetScreen();
+      case "dataFolder": return renderDataScreen();
+      case "profile": return renderProfileScreen();
       default: return null;
     }
   };
@@ -572,6 +643,7 @@ export default function PhoneApp() {
       <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 8 }}>写ﾒｰﾙ ﾈｯﾄﾜｰｸ</div>
       <div style={{ fontSize: "10px", width: "100%", textAlign: "left", marginBottom: 4 }}>
         {regStep === "email" ? "ﾒｰﾙｱﾄﾞﾚｽ設定" : "ﾊﾟｽﾜｰﾄﾞ設定"}
+        {isLogin && <span style={{ fontSize: "8px", opacity: 0.7 }}> (ﾛｸﾞｲﾝ)</span>}
       </div>
       {regStep === "email" ? (
         <>
@@ -592,7 +664,11 @@ export default function PhoneApp() {
         </div>
       )}
       {regError && <div className="error-text">{regError}</div>}
-      <div style={{ fontSize: "8px", opacity: 0.3, marginTop: 12 }}>※下のｷｰで入力 / 決定で次へ</div>
+      <div style={{ fontSize: "8px", opacity: 0.3, marginTop: 8 }}>※下のｷｰで入力 / 決定で次へ</div>
+      <div style={{ fontSize: "8px", opacity: 0.5, marginTop: 4, cursor: "pointer", textDecoration: "underline" }}
+        onClick={() => { setIsLogin((p) => !p); setRegError(""); }}>
+        {isLogin ? "新規登録に切替" : "ﾛｸﾞｲﾝに切替"}
+      </div>
     </div>
   );
 
@@ -753,6 +829,76 @@ export default function PhoneApp() {
           <span className="value">{item.value}</span>
         </div>
       ))}
+    </div>
+  );
+
+  const renderCameraScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">ｶﾒﾗ</div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "70%", gap: 8 }}>
+        <div style={{ width: "80%", aspectRatio: "4/3", background: "#000", border: "1px solid #444", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2 }}>
+          <div style={{ fontSize: "10px", color: "#666" }}>📷 ﾌｧｲﾝﾀﾞｰ</div>
+        </div>
+        <div style={{ fontSize: "9px", opacity: 0.5 }}>添付ﾌｧｲﾙは作成画面から追加</div>
+      </div>
+    </div>
+  );
+
+  const renderInternetScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">ｲﾝﾀｰﾈｯﾄ</div>
+      <div style={{ padding: 12, textAlign: "center" }}>
+        <div style={{ fontSize: "12px", marginBottom: 8 }}>J-SKY web</div>
+        <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: 12 }}>ﾎﾟｰﾀﾙｻｲﾄ</div>
+        {["Yahoo!ｹｰﾀｲ", "天気予報", "ﾆｭｰｽ", "着ﾒﾛ♪", "待受画像", "占い"].map((item, i) => (
+          <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+            onClick={() => setSelectedIndex(i)}>
+            <div className="icon">{["🔍", "☀", "📰", "🎵", "🖼", "🔮"][i]}</div>
+            <div className="label" style={{ fontSize: "11px" }}>{item}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderDataScreen = () => {
+    const imgCount = sentMessages.filter((m) => m.image_url).length + messages.filter((m) => m.image_url).length;
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">ﾃﾞｰﾀ</div>
+        {[
+          { icon: "📨", label: "受信ﾒｰﾙ", value: `${messages.length}件` },
+          { icon: "📤", label: "送信ﾒｰﾙ", value: `${sentMessages.length}件` },
+          { icon: "🖼", label: "画像", value: `${imgCount}件` },
+          { icon: "📊", label: "使用容量", value: `${Math.round((messages.length + sentMessages.length) * 0.8)}KB` },
+        ].map((item, i) => (
+          <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
+            onClick={() => setSelectedIndex(i)}>
+            <span>{item.icon} {item.label}</span>
+            <span className="value">{item.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderProfileScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">ﾌﾟﾛﾌｨｰﾙ</div>
+      <div style={{ padding: 12 }}>
+        <div style={{ textAlign: "center", fontSize: "24px", marginBottom: 8 }}>👤</div>
+        {[
+          { label: "名前", value: user?.display_name || "--" },
+          { label: "ｱﾄﾞﾚｽ", value: user?.virtual_email || "--" },
+          { label: "端末", value: "J-SH51" },
+          { label: "ｷｬﾘｱ", value: "J-PHONE" },
+        ].map((item, i) => (
+          <div key={i} className="settings-item" style={{ cursor: "default" }}>
+            <span>{item.label}</span>
+            <span className="value" style={{ fontSize: "10px" }}>{item.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 
