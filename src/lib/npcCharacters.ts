@@ -14,7 +14,7 @@ export interface NpcCharacter {
 }
 
 export const NPC_GYARU: NpcCharacter = {
-  email: "maki@j-phone.ne.jp",
+  email: "maki@motephon.ne.jp",
   displayName: "☆ﾏｷ☆",
   personality: "gyaru",
   welcomeMessage: {
@@ -58,7 +58,7 @@ export const NPC_GYARU: NpcCharacter = {
 };
 
 export const NPC_GYARUO: NpcCharacter = {
-  email: "takuya@j-phone.ne.jp",
+  email: "takuya@motephon.ne.jp",
   displayName: "★ＴＡＫＵ★",
   personality: "gyaruo",
   welcomeMessage: {

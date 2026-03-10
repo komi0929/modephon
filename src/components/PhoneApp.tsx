@@ -66,7 +66,7 @@ const DEMO_MESSAGES: Message[] = [
   {
     id: "demo-1",
     sender_email: NPC_GYARU.email,
-    receiver_email: "user@j-phone.ne.jp",
+    receiver_email: "user@motephon.ne.jp",
     subject: NPC_GYARU.welcomeMessage.subject,
     body: NPC_GYARU.welcomeMessage.body,
     is_read: false,
@@ -75,7 +75,7 @@ const DEMO_MESSAGES: Message[] = [
   {
     id: "demo-2",
     sender_email: NPC_GYARUO.email,
-    receiver_email: "user@j-phone.ne.jp",
+    receiver_email: "user@motephon.ne.jp",
     subject: NPC_GYARUO.welcomeMessage.subject,
     body: NPC_GYARUO.welcomeMessage.body,
     is_read: false,
@@ -418,7 +418,7 @@ export default function PhoneApp() {
     }
     setRegPassword(password);
 
-    const virtualEmail = `${username}@j-phone.ne.jp`;
+    const virtualEmail = `${username}@motephon.ne.jp`;
     try {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email: `${username}@motephon.app`, password });
@@ -481,10 +481,10 @@ export default function PhoneApp() {
     if (!to.trim() || !body.trim()) return;
     setComposeSending(true);
 
-    const receiverEmail = to.includes("@") ? to : `${to}@j-phone.ne.jp`;
+    const receiverEmail = to.includes("@") ? to : `${to}@motephon.ne.jp`;
     const newMsg: Message = {
       id: `sent-${Date.now()}`,
-      sender_email: user?.virtual_email || "user@j-phone.ne.jp",
+      sender_email: user?.virtual_email || "user@motephon.ne.jp",
       receiver_email: receiverEmail,
       subject: subject || "(ﾅｼ)",
       body: body,
@@ -639,7 +639,7 @@ export default function PhoneApp() {
 
   const renderRegisterScreen = () => (
     <div className="auth-screen screen-enter">
-      <div className="title">J-PHONE</div>
+      <div className="title">motephon</div>
       <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 8 }}>写ﾒｰﾙ ﾈｯﾄﾜｰｸ</div>
       <div style={{ fontSize: "10px", width: "100%", textAlign: "left", marginBottom: 4 }}>
         {regStep === "email" ? "ﾒｰﾙｱﾄﾞﾚｽ設定" : "ﾊﾟｽﾜｰﾄﾞ設定"}
@@ -653,7 +653,7 @@ export default function PhoneApp() {
             {regField === "email" && <span className="cursor-blink" />}
           </div>
           <div className="domain" style={{ width: "100%", textAlign: "right", fontSize: "10px", opacity: 0.5 }}>
-            @j-phone.ne.jp
+            @motephon.ne.jp
           </div>
         </>
       ) : (
@@ -676,7 +676,7 @@ export default function PhoneApp() {
     <div className="idle-screen screen-enter">
       <div className="idle-clock">{clock}</div>
       <div className="idle-date">{dateStr}</div>
-      <div className="idle-carrier">J-PHONE</div>
+      <div className="idle-carrier">motephon</div>
       {unreadCount > 0 && (
         <div className="idle-notification">
           <span className="envelope-icon">✉</span> 新着ﾒｰﾙ {unreadCount}件
@@ -891,7 +891,7 @@ export default function PhoneApp() {
           { label: "名前", value: user?.display_name || "--" },
           { label: "ｱﾄﾞﾚｽ", value: user?.virtual_email || "--" },
           { label: "端末", value: "J-SH51" },
-          { label: "ｷｬﾘｱ", value: "J-PHONE" },
+          { label: "ｷｬﾘｱ", value: "motephon" },
         ].map((item, i) => (
           <div key={i} className="settings-item" style={{ cursor: "default" }}>
             <span>{item.label}</span>
@@ -939,7 +939,7 @@ export default function PhoneApp() {
             <div className="status-bar">
               <div className="left">
                 <div className="antenna"><div className="bar" /><div className="bar" /><div className="bar" /></div>
-                <span style={{ fontSize: "8px" }}>J-PHONE</span>
+                <span style={{ fontSize: "8px" }}>motephon</span>
               </div>
               <div className="center">{clock}</div>
               <div className="right">

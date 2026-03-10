@@ -64,8 +64,8 @@ CREATE POLICY "Users can mark messages as read" ON messages
 -- NPCアカウント初期データ
 INSERT INTO users (id, virtual_email, display_name, is_npc)
 VALUES
-  ('00000000-0000-0000-0000-000000000001', 'maki@j-phone.ne.jp', '☆ﾏｷ☆', true),
-  ('00000000-0000-0000-0000-000000000002', 'takuya@j-phone.ne.jp', '★ＴＡＫＵ★', true)
+  ('00000000-0000-0000-0000-000000000001', 'maki@motephon.ne.jp', '☆ﾏｷ☆', true),
+  ('00000000-0000-0000-0000-000000000002', 'takuya@motephon.ne.jp', '★ＴＡＫＵ★', true)
 ON CONFLICT (virtual_email) DO NOTHING;
 
 -- リアルタイム有効化
