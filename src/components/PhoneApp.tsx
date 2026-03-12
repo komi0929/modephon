@@ -45,7 +45,9 @@ type Screen =
   | "dataFolder"
   | "dataFolderSub"
   | "profile"
-  | "userSearch";
+  | "userSearch"
+  | "infraredSend"
+  | "infraredReceive";
 
 interface Message {
   id: string;
@@ -133,6 +135,14 @@ export default function PhoneApp() {
   const [searchResults, setSearchResults] = useState<{virtual_email: string; display_name: string; is_npc: boolean}[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
+  // 赤外線通信 state
+  const [irCode, setIrCode] = useState("");
+  const [irCountdown, setIrCountdown] = useState(-1);
+  const [irInputCode, setIrInputCode] = useState("");
+  const [irResult, setIrResult] = useState<{found: boolean; sender?: {email: string; name: string}; message?: string} | null>(null);
+  const [irLoading, setIrLoading] = useState(false);
+  const irTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Compose state
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -173,6 +183,7 @@ export default function PhoneApp() {
     if (screen === "register") return true;
     if (screen === "compose" && composeField !== "none") return true;
     if (screen === "userSearch") return true;
+    if (screen === "infraredReceive") return true;
     return false;
   }, [screen, composeField]);
 
@@ -221,6 +232,8 @@ export default function PhoneApp() {
       }
     } else if (screen === "userSearch") {
       setSearchQuery((prev) => prev + text);
+    } else if (screen === "infraredReceive") {
+      setIrInputCode((prev) => prev + text);
     }
     setToggleState(createInitialState());
   }, [toggleState, screen, regField, composeField]);
@@ -270,6 +283,8 @@ export default function PhoneApp() {
         }
       } else if (screen === "userSearch") {
         setSearchQuery((p) => p.slice(0, -1));
+      } else if (screen === "infraredReceive") {
+        setIrInputCode((p) => p.slice(0, -1));
       }
       return prev;
     });
@@ -739,6 +754,8 @@ export default function PhoneApp() {
       case "dataFolderSub": return ["戻る", "選択", ""];
       case "profile": return ["戻る", "", ""];
       case "userSearch": return ["戻る", "検索", ""];
+      case "infraredSend": return ["戻る", "", ""];
+      case "infraredReceive": return ["戻る", "受信", ""];
       default: return ["", "", ""];
     }
   }, [screen, composeField]);
@@ -811,6 +828,8 @@ export default function PhoneApp() {
       case "dataFolderSub": return renderDataFolderSubScreen();
       case "profile": return renderProfileScreen();
       case "userSearch": return renderUserSearchScreen();
+      case "infraredSend": return renderInfraredSendScreen();
+      case "infraredReceive": return renderInfraredReceiveScreen();
       default: return null;
     }
   };
@@ -1481,6 +1500,175 @@ export default function PhoneApp() {
     </div>
   );
 
+  // ========== INFRARED SEND SCREEN ==========
+  const renderInfraredSendScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📶 赤外線送信</div>
+      <div style={{ padding: 12, textAlign: "center" }}>
+        {/* 赤外線アニメーション */}
+        <div style={{
+          width: 60, height: 60, margin: "0 auto 12px",
+          borderRadius: "50%",
+          background: irCountdown > 0
+            ? "radial-gradient(circle, #ff4444 0%, #cc0000 50%, #880000 100%)"
+            : "radial-gradient(circle, #666 0%, #333 100%)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: irCountdown > 0 ? "0 0 20px rgba(255,0,0,0.4)" : "none",
+          animation: irCountdown > 0 ? "cursorBlink 1s steps(1) infinite" : "none",
+        }}>
+          <div style={{ fontSize: "24px" }}>📶</div>
+        </div>
+
+        {irCode ? (
+          <>
+            <div style={{ fontSize: "9px", opacity: 0.6, marginBottom: 4 }}>
+              このコードを相手に伝えてね
+            </div>
+            <div style={{
+              fontSize: "28px", fontWeight: "bold", letterSpacing: 8,
+              padding: "8px 0", fontFamily: "monospace",
+              color: irCountdown > 0 ? "inherit" : "rgba(0,0,0,0.3)",
+            }}>
+              {irCode}
+            </div>
+            <div style={{
+              fontSize: "10px",
+              color: irCountdown > 30 ? "inherit" : (colorMode ? "#c33" : "inherit"),
+              marginTop: 4,
+            }}>
+              {irCountdown > 0
+                ? `⬇ 残り ${Math.floor(irCountdown / 60)}:${String(irCountdown % 60).padStart(2, "0")}`
+                : "⚠ 期限切れ… 戻ってもう一度やってね"}
+            </div>
+            {/* プログレスバー */}
+            <div style={{ marginTop: 12, height: 4, background: "rgba(0,0,0,0.1)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 2, transition: "width 1s linear",
+                width: `${Math.max(0, (irCountdown / 120) * 100)}%`,
+                background: irCountdown > 30 ? (colorMode ? "#4466aa" : "#888") : (colorMode ? "#cc3333" : "#666"),
+              }} />
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: "10px", opacity: 0.5, padding: 12 }}>
+            コードを生成中...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ========== INFRARED RECEIVE SCREEN ==========
+  const handleInfraredReceive = useCallback(async () => {
+    let code = irInputCode;
+    if (toggleState.text) {
+      code += toggleState.text;
+      setIrInputCode(code);
+      setToggleState(createInitialState("", "number"));
+    }
+    if (!code.trim() || code.length < 6) return;
+    setIrLoading(true);
+    try {
+      const res = await fetch(`/api/infrared?code=${encodeURIComponent(code)}&receiver=${encodeURIComponent(user?.virtual_email || "")}`);
+      if (res.ok) {
+        const data = await res.json();
+        setIrResult(data);
+      }
+    } catch {
+      setIrResult({ found: false, message: "通信エラーです" });
+    }
+    setIrLoading(false);
+  }, [irInputCode, toggleState, user]);
+
+  const renderInfraredReceiveScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📱 赤外線受信</div>
+      <div style={{ padding: 12 }}>
+        <div style={{ fontSize: "10px", marginBottom: 8, opacity: 0.7, textAlign: "center" }}>
+          相手から教えてもらった<br/>6ケタのコードを入力してね
+        </div>
+
+        {/* コード入力欄 */}
+        <div style={{
+          background: "rgba(0,0,0,0.05)",
+          padding: "8px",
+          borderRadius: 2,
+          fontSize: "24px",
+          fontFamily: "monospace",
+          letterSpacing: 8,
+          textAlign: "center",
+          marginBottom: 8,
+          border: "1px solid rgba(0,0,0,0.1)",
+          minHeight: 36,
+        }}>
+          {irInputCode}
+          <span className="cursor-blink" />
+        </div>
+
+        {/* 入力ドット表示 */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 10 }}>
+          {[0,1,2,3,4,5].map(i => (
+            <div key={i} style={{
+              width: 10, height: 3, borderRadius: 1,
+              background: irInputCode.length > i ? (colorMode ? "#4466aa" : "#888") : "rgba(0,0,0,0.1)",
+            }} />
+          ))}
+        </div>
+
+        {/* 受信ボタン */}
+        <div
+          className="menu-item selected"
+          style={{ justifyContent: "center", padding: "6px 0", marginBottom: 8 }}
+          onClick={handleInfraredReceive}
+        >
+          <div className="icon">📡</div>
+          <div className="label" style={{ fontSize: "11px" }}>受信する</div>
+        </div>
+
+        {irLoading && (
+          <div style={{ textAlign: "center", fontSize: "10px", opacity: 0.5, padding: 8 }}>
+            通信中...
+          </div>
+        )}
+
+        {irResult && !irLoading && (
+          irResult.found ? (
+            <div style={{ textAlign: "center", padding: 8, background: "rgba(0,100,0,0.05)", borderRadius: 4, marginTop: 4 }}>
+              <div style={{ fontSize: "20px", marginBottom: 4 }}>✨</div>
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>連絡先を受信しました！</div>
+              <div style={{ fontSize: "10px", marginTop: 4 }}>
+                {irResult.sender?.name || ""}
+              </div>
+              <div style={{ fontSize: "8px", opacity: 0.5, marginTop: 2 }}>
+                {irResult.sender?.email || ""}
+              </div>
+              <div
+                className="menu-item selected"
+                style={{ justifyContent: "center", padding: "6px 0", marginTop: 8 }}
+                onClick={() => {
+                  if (irResult.sender) {
+                    setComposeTo(irResult.sender.email.split("@")[0]);
+                    setComposeSubject(""); setComposeBody("");
+                    setComposeImage(null); setComposeImagePreviewUrl(null);
+                    setComposeField("subject"); setToggleState(createInitialState());
+                    pushScreen("compose");
+                  }
+                }}
+              >
+                <div className="icon">📧</div>
+                <div className="label" style={{ fontSize: "11px" }}>早速ﾒｰﾙを書く！</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", fontSize: "10px", padding: 8, color: colorMode ? "#c33" : "inherit" }}>
+              {irResult.message || "見つかりませんでした"}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+
   const renderAddressBookScreen = () => (
     <div className="screen-enter">
       <div className="screen-title">📖 ｱﾄﾞﾚｽ帳 ({ALL_NPCS.length}件)</div>
@@ -1499,19 +1687,69 @@ export default function PhoneApp() {
             </div>
           </div>
         ))}
-        {/* ユーザー検索ボタン */}
-        <div className={`menu-item ${selectedIndex === ALL_NPCS.length ? "selected" : ""}`}
-          onClick={() => {
-            setSearchQuery("");
-            setSearchResults([]);
-            setToggleState(createInitialState("", "number"));
-            pushScreen("userSearch");
-          }}
-          style={{ borderTop: "1px dashed rgba(0,0,0,0.15)", marginTop: 6, paddingTop: 6 }}>
-          <div className="icon" style={{ fontSize: "16px" }}>🔍</div>
-          <div className="label">
-            <div style={{ fontSize: "11px", fontWeight: "bold" }}>ﾕｰｻﾞｰ検索</div>
-            <div style={{ fontSize: "8px", opacity: 0.5 }}>4ケタの番号で探せるよ</div>
+        {/* 赤外線通信 & 番号検索ボタン */}
+        <div style={{ borderTop: "1px dashed rgba(0,0,0,0.15)", marginTop: 6, paddingTop: 6 }}>
+          {/* 赤外線送信 */}
+          <div className={`menu-item ${selectedIndex === ALL_NPCS.length ? "selected" : ""}`}
+            onClick={async () => {
+              setIrCode(""); setIrCountdown(-1); setIrResult(null);
+              pushScreen("infraredSend");
+              // コード発行
+              try {
+                const res = await fetch("/api/infrared", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ senderEmail: user?.virtual_email, senderName: user?.display_name }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setIrCode(data.code);
+                  setIrCountdown(data.expiresIn || 120);
+                  // カウントダウン開始
+                  if (irTimerRef.current) clearInterval(irTimerRef.current);
+                  irTimerRef.current = setInterval(() => {
+                    setIrCountdown(p => {
+                      if (p <= 1) {
+                        if (irTimerRef.current) clearInterval(irTimerRef.current);
+                        return 0;
+                      }
+                      return p - 1;
+                    });
+                  }, 1000);
+                }
+              } catch {}
+            }}>
+            <div className="icon" style={{ fontSize: "16px" }}>📶</div>
+            <div className="label">
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>赤外線送信</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>自分のコードを表示</div>
+            </div>
+          </div>
+          {/* 赤外線受信 */}
+          <div className={`menu-item ${selectedIndex === ALL_NPCS.length + 1 ? "selected" : ""}`}
+            onClick={() => {
+              setIrInputCode(""); setIrResult(null); setIrLoading(false);
+              setToggleState(createInitialState("", "number"));
+              pushScreen("infraredReceive");
+            }}>
+            <div className="icon" style={{ fontSize: "16px" }}>📱</div>
+            <div className="label">
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>赤外線受信</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>相手のコードを入力</div>
+            </div>
+          </div>
+          {/* 番号検索 */}
+          <div className={`menu-item ${selectedIndex === ALL_NPCS.length + 2 ? "selected" : ""}`}
+            onClick={() => {
+              setSearchQuery(""); setSearchResults([]);
+              setToggleState(createInitialState("", "number"));
+              pushScreen("userSearch");
+            }}>
+            <div className="icon" style={{ fontSize: "16px" }}>🔍</div>
+            <div className="label">
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>番号検索</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>4ケタの番号で探す</div>
+            </div>
           </div>
         </div>
       </div>
