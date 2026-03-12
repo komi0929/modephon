@@ -69,8 +69,10 @@ interface UserProfile {
 }
 
 /* =========================================
-   Demo Data
+   App Version & Demo Data
    ========================================= */
+const APP_VERSION = "2.0.0";
+
 const DEMO_MESSAGES: Message[] = [
   {
     id: "demo-1",
@@ -1216,7 +1218,7 @@ export default function PhoneApp() {
       { label: "文字ｻｲｽﾞ", value: fontSize, icon: "🔤" },
       { label: "画面の明るさ", value: "▮".repeat(brightness) + "▯".repeat(5 - brightness), icon: "☀" },
       { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
-      { label: "ﾊﾞｰｼﾞｮﾝ", value: "v2.0.0", icon: "ℹ" },
+      { label: "ﾊﾞｰｼﾞｮﾝ", value: `v${APP_VERSION}`, icon: "ℹ" },
     ];
     return (
       <div className="screen-enter">
@@ -1531,7 +1533,7 @@ export default function PhoneApp() {
       { icon: "📨", label: "受信ﾒｰﾙ", value: `${messages.length}件` },
       { icon: "📤", label: "送信ﾒｰﾙ", value: `${sentMessages.length}件` },
       { icon: "🖼", label: "画像", value: `${imgCount}件` },
-      { icon: "🎵", label: "着信音/着ﾒﾛ", value: "5曲" },
+      { icon: "🎵", label: "着信音/着ﾒﾛ", value: `${["着信音1", "着信音2", "着信音3"].includes(ringtone) ? 5 : 6}曲` },
     ];
     return (
       <div className="screen-enter">
@@ -1616,7 +1618,7 @@ export default function PhoneApp() {
               <div className="icon">🎵</div>
               <div className="label">
                 <div style={{ fontSize: "10px" }}>{melody}</div>
-                <div style={{ fontSize: "8px", opacity: 0.5 }}>{i < 3 ? "40和音 / 3KB" : "ｼｽﾃﾑ"}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{i < 3 ? "40和音 / 3KB" : (melody === ringtone ? "✔設定中" : "ｼｽﾃﾑ")}</div>
               </div>
             </div>
           ))}
@@ -1667,7 +1669,7 @@ export default function PhoneApp() {
             { label: "ﾊﾟｹｯﾄ通信", value: "28.8kbps", icon: "🌐" },
             { label: "Java", value: "対応 (100KB)", icon: "☕" },
             { label: "着信音", value: "40和音", icon: "🎵" },
-            { label: "ﾊﾞｰｼﾞｮﾝ", value: "v2.0.0", icon: "ℹ" },
+            { label: "ﾊﾞｰｼﾞｮﾝ", value: `v${APP_VERSION}`, icon: "ℹ" },
           ].map((item, i) => (
             <div key={i} className="settings-item" style={{ cursor: "default" }}>
               <span style={{ fontSize: "10px" }}>{item.icon} {item.label}</span>
