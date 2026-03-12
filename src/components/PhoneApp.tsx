@@ -109,14 +109,23 @@ export default function PhoneApp() {
   const [newMailNotification, setNewMailNotification] = useState(false);
   const [clock, setClock] = useState("");
   const [dateStr, setDateStr] = useState("");
-  const [colorMode, setColorMode] = useState(true);
+  // colorMode is now initialized from localStorage below
 
-  // Settings state
-  const [mannerMode, setMannerMode] = useState(false);
-  const [ringtone, setRingtone] = useState("着信音1");
-  const [wallpaper, setWallpaper] = useState("標準");
-  const [fontSize, setFontSize] = useState("標準");
-  const [brightness, setBrightness] = useState(3);
+  // Settings state (初期値はlocalStorageから復元)
+  const [mannerMode, setMannerMode] = useState(() => { try { return localStorage.getItem("mp_manner") === "true"; } catch { return false; } });
+  const [ringtone, setRingtone] = useState(() => { try { return localStorage.getItem("mp_ringtone") || "着信音1"; } catch { return "着信音1"; } });
+  const [wallpaper, setWallpaper] = useState(() => { try { return localStorage.getItem("mp_wallpaper") || "標準"; } catch { return "標準"; } });
+  const [fontSize, setFontSize] = useState(() => { try { return localStorage.getItem("mp_fontsize") || "標準"; } catch { return "標準"; } });
+  const [brightness, setBrightness] = useState(() => { try { const v = localStorage.getItem("mp_brightness"); return v ? Number(v) : 3; } catch { return 3; } });
+  const [colorMode, _setColorMode] = useState(() => { try { return localStorage.getItem("mp_color") !== "false"; } catch { return true; } });
+  const setColorMode = useCallback((fn: (prev: boolean) => boolean) => {
+    _setColorMode(prev => { const v = fn(prev); try { localStorage.setItem("mp_color", String(v)); } catch {} return v; });
+  }, []);
+
+  // Toast state for melody DL feedback
+  const [melodyToast, setMelodyToast] = useState<string | null>(null);
+  // Wallpaper DL animation state
+  const [wpDownloading, setWpDownloading] = useState<string | null>(null);
 
   // Camera state
   const [cameraCountdown, setCameraCountdown] = useState(-1);
@@ -192,6 +201,13 @@ export default function PhoneApp() {
     return false;
   }, [screen, composeField]);
 
+  // --- Settings persistence ---
+  useEffect(() => { try { localStorage.setItem("mp_manner", String(mannerMode)); } catch {} }, [mannerMode]);
+  useEffect(() => { try { localStorage.setItem("mp_ringtone", ringtone); } catch {} }, [ringtone]);
+  useEffect(() => { try { localStorage.setItem("mp_wallpaper", wallpaper); } catch {} }, [wallpaper]);
+  useEffect(() => { try { localStorage.setItem("mp_fontsize", fontSize); } catch {} }, [fontSize]);
+  useEffect(() => { try { localStorage.setItem("mp_brightness", String(brightness)); } catch {} }, [brightness]);
+
   // --- Clock ---
   useEffect(() => {
     const updateClock = () => {
@@ -204,6 +220,23 @@ export default function PhoneApp() {
     const interval = setInterval(updateClock, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // --- 日替わりコンテンツ用シード乱数 ---
+  const seedRandom = useCallback((seed: number) => {
+    let s = seed;
+    return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  }, []);
+  const todaySeed = useMemo(() => {
+    const d = new Date();
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }, []);
+
+  // --- 文字サイズスケール ---
+  const fontScale = useMemo(() => {
+    const scales: Record<string, number> = { "小": 0.85, "標準": 1, "大": 1.2 };
+    return scales[fontSize] || 1;
+  }, [fontSize]);
+  const brightnessOpacity = useMemo(() => 0.4 + (brightness / 5) * 0.6, [brightness]);
 
   // --- Navigation ---
   const pushScreen = useCallback((next: Screen) => {
@@ -904,11 +937,8 @@ export default function PhoneApp() {
       "花畑": "linear-gradient(180deg, #87ceeb 0%, #98fb98 50%, #90ee90 100%)",
       "ｷﾗｷﾗ": "linear-gradient(135deg, #ff69b4 0%, #ff1493 25%, #da70d6 50%, #ba55d3 75%, #ff69b4 100%)",
     };
-    // 文字サイズに応じたフォントスケール
-    const fontScale: Record<string, number> = { "小": 0.85, "標準": 1, "大": 1.2 };
-    const scale = fontScale[fontSize] || 1;
-    // 明るさに応じたopacity
-    const brightnessOpacity = 0.4 + (brightness / 5) * 0.6;
+    // グローバルのfontScale / brightnessOpacityを使用（ローカル重複削除済み）
+    const scale = fontScale;
 
     return (
       <div className="idle-screen screen-enter" style={{
@@ -1176,7 +1206,7 @@ export default function PhoneApp() {
           {["Yahoo!ｹｰﾀｲ", "天気予報", "ﾆｭｰｽ速報", "着ﾒﾛ♪", "待受画像DL", "今日の占い"].map((item, i) => (
             <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
               onClick={() => { setSelectedIndex(i); handleInternetSelect(i); }}>
-              <div className="icon">{["🔍", "☀", "📰", "🎵", "🖼", "🔮"][i]}</div>
+              <div className="icon">{["🔍","☀","📰","🎵","🖼","🔮"][i]}</div>
               <div className="label" style={{ fontSize: "11px" }}>{item}</div>
             </div>
           ))}
@@ -1201,61 +1231,130 @@ export default function PhoneApp() {
           </div>
         </div>
       )},
-      weather: { title: "天気予報", content: (
-        <div style={{ padding: 8 }}>
-          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 8, fontSize: "11px" }}>☀ 全国天気予報</div>
-          {[{area: "東京", icon: "☀", temp: "18℃/8℃", txt: "晴れ"}, {area: "大阪", icon: "⛅", temp: "16℃/7℃", txt: "曇り時々晴れ"}, {area: "札幌", icon: "❄", temp: "2℃/-5℃", txt: "雪"}, {area: "福岡", icon: "🌧", temp: "14℃/6℃", txt: "雨のち曇"}, {area: "沖縄", icon: "☀", temp: "22℃/16℃", txt: "晴れ"}].map((w, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
-              <span>{w.icon} {w.area}</span>
-              <span style={{ opacity: 0.7 }}>{w.temp}</span>
-              <span style={{ fontSize: "9px" }}>{w.txt}</span>
-            </div>
-          ))}
-          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 8, textAlign: "center" }}>更新: {dateStr} {clock}</div>
-        </div>
-      )},
-      news: { title: "ﾆｭｰｽ速報", content: (
-        <div style={{ padding: 8 }}>
-          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>📰 ﾆｭｰｽ速報</div>
-          {["'ﾓｰﾆﾝｸﾞ娘。新曲ｵﾘｺﾝ1位獲得'", "'ﾜｰﾙﾄﾞｶｯﾌﾟ日本代表合宿ｽﾀｰﾄ'", "'新型携帯続々登場 ｶﾒﾗ機能が進化'", "'渋谷109春ﾌｧｯｼｮﾝ特集'", "'人気ﾄﾞﾗﾏ最終回 視聴率30%超'"].map((news, i) => (
-            <div key={i} style={{ padding: "5px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
-              <span style={{ color: colorMode ? "#c33" : "inherit", fontSize: "9px" }}>[速報]</span> {news}
-            </div>
-          ))}
-          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>→ 詳細は各ﾆｭｰｽをｸﾘｯｸ</div>
-        </div>
-      )},
-      melody: { title: "着ﾒﾛ♪", content: (
+      weather: { title: "\u5929\u6c17\u4e88\u5831", content: (() => {
+        const rng = seedRandom(todaySeed + 1);
+        const hour = new Date().getHours();
+        const areas = ["\u6771\u4eac", "\u5927\u962a", "\u672d\u5e4c", "\u798f\u5ca1", "\u6c96\u7e04"];
+        const baseTemps = [15, 14, 2, 13, 22];
+        const icons = ["☀", "⛅", "🌧", "❄", "☁"];
+        const txts = ["晴れ", "曇り時々晴れ", "雨", "雪", "曇り", "晴れのち曇", "雨のち晴"];
+        const hourMod = hour < 10 ? -3 : hour < 16 ? 2 : -1;
+        return (
+          <div style={{ padding: 8 }}>
+            <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 8, fontSize: "11px" }}>☀ 全国天気予報</div>
+            {areas.map((area, i) => {
+              const variation = Math.floor(rng() * 8) - 4;
+              const high = baseTemps[i] + variation + hourMod;
+              const low = high - 8 - Math.floor(rng() * 5);
+              const iconIdx = Math.floor(rng() * icons.length);
+              const txtIdx = Math.floor(rng() * txts.length);
+              return (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
+                  <span>{icons[iconIdx]} {area}</span>
+                  <span style={{ opacity: 0.7 }}>{high}℃/{low}℃</span>
+                  <span style={{ fontSize: "9px" }}>{txts[txtIdx]}</span>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 8, textAlign: "center" }}>更新: {dateStr} {clock}</div>
+          </div>
+        );
+      })()},
+      news: { title: "ﾆｭｰｽ速報", content: (() => {
+        const allNews = [
+          "ﾓｰﾆﾝｸﾞ娘。新曲ｵﾘｺﾝ1位獲得", "ﾜｰﾙﾄﾞｶｯﾌﾟ日本代表合宿ｽﾀｰﾄ",
+          "新型携帯続々登場 ｶﾒﾗ機能が進化", "渋谷109春ﾌｧｯｼｮﾝ特集",
+          "人気ﾄﾞﾗﾏ最終回 視聴率30%超", "宇多田ヒカル新アルバム発売決定",
+          "コンビニ各社 iMode対応強化", "浜崎あゆみ アジアツアー開催発表",
+          "少年ジャンプ NARUTO起連載開始", "ケータイ純増 1億台突破",
+          "トヨタ・ホンダ ハイブリッド車開発加速", "塗るだけエステ 100万本突破",
+          "J-フォン 新サービス「J-SKY Walker」開始", "SMAP×SMAP 視聴率25%の安定感",
+          "au GPSナビゲーションサービス開始", "メガバンク 着うた配信数500曲突破",
+          "イチロー メジャー通算257号HR", "映画『千と千尋』興行収入300億突破",
+          "DoCoMo FOMA加入者30万人突破", "NTTドコモ 504iシリーズ発表",
+        ];
+        const rng = seedRandom(todaySeed + 2);
+        const indices: number[] = [];
+        while (indices.length < 5) {
+          const idx = Math.floor(rng() * allNews.length);
+          if (!indices.includes(idx)) indices.push(idx);
+        }
+        return (
+          <div style={{ padding: 8 }}>
+            <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>📰 ﾆｭｰｽ速報</div>
+            {indices.map((idx, i) => (
+              <div key={i} style={{ padding: "5px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
+                <span style={{ color: colorMode ? "#c33" : "inherit", fontSize: "9px" }}>[速報]</span> {allNews[idx]}
+              </div>
+            ))}
+            <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>{dateStr} 更新</div>
+          </div>
+        );
+      })()},
+      melody: { title: "着ﾒﾛ♫", content: (
         <div style={{ padding: 8 }}>
           <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🎵 着ﾒﾛﾗﾝｷﾝｸﾞ</div>
           <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 6, textAlign: "center" }}>40和音対応 / 各3KB</div>
-          {[{rank: 1, song: "LOVEﾏｼｰﾝ - ﾓｰﾆﾝｸﾞ娘。", hot: true}, {rank: 2, song: "Automatic - 宇多田ﾋｶﾙ"}, {rank: 3, song: "ﾂﾅﾐ - ｻｻﾞﾝ"}, {rank: 4, song: "SEASONS - 浜崎あゆみ"}, {rank: 5, song: "桜坂 - 福山雅治"}, {rank: 6, song: "夏祭り - Whiteberry"}, {rank: 7, song: "secret base - ZONE"}].map((m) => (
+          {[{rank: 1, song: "LOVEﾏｼｰﾝ", artist: "ﾓｰﾆﾝｸﾞ娘。", hot: true}, {rank: 2, song: "Automatic", artist: "宇多田ﾋｶﾙ"}, {rank: 3, song: "ﾂﾅﾐ", artist: "ｻｻﾞﾝ"}, {rank: 4, song: "SEASONS", artist: "浜崎あゆみ"}, {rank: 5, song: "桜坂", artist: "福山雅治"}, {rank: 6, song: "夏祭り", artist: "Whiteberry"}, {rank: 7, song: "secret base", artist: "ZONE"}].map((m) => (
             <div key={m.rank} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
               <span style={{ fontWeight: "bold", width: 14, fontSize: "11px", color: m.rank <= 3 ? (colorMode ? "#c33" : "inherit") : "inherit" }}>{m.rank}</span>
-              <span style={{ flex: 1 }}>{m.song}</span>
+              <span style={{ flex: 1 }}>{m.song}<span style={{ fontSize: "8px", opacity: 0.5 }}> - {m.artist}</span></span>
               {m.hot && <span style={{ fontSize: "7px", background: colorMode ? "#c33" : "#333", color: "#fff", borderRadius: 2, padding: "0 3px" }}>HOT</span>}
-              <span style={{ fontSize: "8px", opacity: 0.5 }}>♪DL</span>
+              {ringtone === m.song ? (
+                <span style={{ fontSize: "7px", background: colorMode ? "#4466aa" : "#555", color: "#fff", borderRadius: 2, padding: "0 3px" }}>✔設定中</span>
+              ) : (
+                <span style={{ fontSize: "8px", opacity: 0.5, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setRingtone(m.song); setMelodyToast(`♫ ${m.song} を着信音に設定！`); setTimeout(() => setMelodyToast(null), 2000); }}>♫DL</span>
+              )}
             </div>
           ))}
+          {melodyToast && (
+            <div style={{ marginTop: 6, textAlign: "center", background: colorMode ? "#4466aa" : "#555", color: "#fff", fontSize: "9px", padding: "4px 8px", borderRadius: 3 }}>
+              {melodyToast}
+            </div>
+          )}
         </div>
       )},
-      wallpapers: { title: "待受画像DL", content: (
-        <div style={{ padding: 8 }}>
-          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🖼 待受画像</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-            {["🌸桜", "🌊海", "🌙月", "🐱猫", "🌈虹", "⭐星空", "🗼東京", "🎀ﾘﾎﾞﾝ", "💎宝石"].map((w, i) => (
-              <div key={i} style={{ aspectRatio: "3/4", background: "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, fontSize: "11px", flexDirection: "column", gap: 2, cursor: "pointer" }}>
-                <div style={{ fontSize: "18px" }}>{w.slice(0, 2)}</div>
-                <div style={{ fontSize: "8px" }}>{w.slice(2)}</div>
-              </div>
-            ))}
+      wallpapers: { title: "待受画像DL", content: (() => {
+        const wpItems = [
+          { emoji: "🌸", name: "桡", wpKey: "標準" },
+          { emoji: "🌊", name: "海", wpKey: "海辺" },
+          { emoji: "🌙", name: "月", wpKey: "夜空☆" },
+          { emoji: "🐱", name: "猫", wpKey: "標準" },
+          { emoji: "🌈", name: "虹", wpKey: "ｷﾗｷﾗ" },
+          { emoji: "⭐", name: "星空", wpKey: "夜空☆" },
+          { emoji: "🗼", name: "東京", wpKey: "標準" },
+          { emoji: "🎀", name: "ﾘﾎﾞﾝ", wpKey: "ｷﾗｷﾗ" },
+          { emoji: "💎", name: "宝石", wpKey: "標準" },
+          { emoji: "🌻", name: "花", wpKey: "花畑" },
+        ];
+        return (
+          <div style={{ padding: 8 }}>
+            <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🖼 待受画像</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {wpItems.map((w, i) => (
+                <div key={i} style={{ aspectRatio: "3/4", background: wallpaper === w.wpKey ? (colorMode ? "rgba(68,102,170,0.15)" : "rgba(0,0,0,0.15)") : "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, fontSize: "11px", flexDirection: "column", gap: 2, cursor: "pointer", border: wallpaper === w.wpKey ? "1px solid rgba(68,102,170,0.4)" : "1px solid transparent" }}
+                  onClick={() => {
+                    if (wpDownloading) return;
+                    setWpDownloading(w.name);
+                    setTimeout(() => { setWallpaper(w.wpKey); setWpDownloading(null); }, 800);
+                  }}>
+                  <div style={{ fontSize: "18px" }}>{wpDownloading === w.name ? "⏳" : w.emoji}</div>
+                  <div style={{ fontSize: "8px" }}>{wpDownloading === w.name ? "DL中..." : w.name}</div>
+                  {wallpaper === w.wpKey && <div style={{ fontSize: "6px", opacity: 0.5 }}>✓設定中</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>120×160ﾋﾟｸｾﾙ / 各5KB</div>
           </div>
-          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>120×160ﾋﾟｸｾﾙ / 各5KB</div>
-        </div>
-      )},
+        );
+      })()},
       fortune: { title: "今日の占い", content: (() => {
-        const signs = ["♈牡羊座", "♉牡牛座", "♊双子座", "♋蟹座", "♌獅子座", "♍乙女座", "♎天秤座", "♏蠍座", "♐射手座", "♑山羊座", "♒水瓶座", "♓魚座"];
-        const lucks = ["◎大吉", "○吉", "○吉", "△小吉", "◎大吉", "○吉", "×凶", "○吉", "◎大吉", "△小吉", "○吉", "○吉"];
+        const signs = ["♈牡羊座", "♉牡牛座", "♊双子座", "♋蟹座", "♌獅子座", "♍乙女座", "♎天秤座", "♏蠎座", "♐射手座", "♑山羊座", "♒水瓶座", "♓魚座"];
+        const allLucks = ["◎大吉", "○吉", "○吉", "△小吉", "◎大吉", "○吉", "×凶", "○中吉", "△小吉", "○吉"];
+        const luckyItems = ["☆ｽﾄﾗｯﾌﾟ", "♡ﾌﾟﾘｸﾗ帳", "♪着ﾒﾛ", "✶ﾍｱｻﾞｱｸｾ", "✧シルバーリング", "❀花柄ハンカチ", "★迷彩柄バッグ", "◇クリアファイル", "♡ピンクのペン", "☆メガネケース", "♪ワイヤレスイヤホン", "✶ミサンガ"];
+        const rng = seedRandom(todaySeed + 3);
+        const dailyLucks = signs.map(() => allLucks[Math.floor(rng() * allLucks.length)]);
+        const dailyItem = luckyItems[Math.floor(rng() * luckyItems.length)];
         return (
           <div style={{ padding: 8 }}>
             <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🔮 今日の運勢</div>
@@ -1263,10 +1362,10 @@ export default function PhoneApp() {
             {signs.map((sign, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px dotted rgba(0,0,0,0.08)", fontSize: "9px" }}>
                 <span>{sign}</span>
-                <span style={{ fontWeight: lucks[i].includes("大吉") ? "bold" : "normal", color: lucks[i].includes("凶") && colorMode ? "#c33" : "inherit" }}>{lucks[i]}</span>
+                <span style={{ fontWeight: dailyLucks[i].includes("大吉") ? "bold" : "normal", color: dailyLucks[i].includes("凶") && colorMode ? "#c33" : "inherit" }}>{dailyLucks[i]}</span>
               </div>
             ))}
-            <div style={{ fontSize: "9px", marginTop: 8, padding: 6, background: "rgba(0,0,0,0.04)", borderRadius: 2 }}>ﾗｯｷｰｱｲﾃﾑ: ☆ｽﾄﾗｯﾌﾟ</div>
+            <div style={{ fontSize: "9px", marginTop: 8, padding: 6, background: "rgba(0,0,0,0.04)", borderRadius: 2 }}>ﾗｯｷｰｱｲﾃﾑ: {dailyItem}</div>
           </div>
         );
       })()},
@@ -1907,7 +2006,7 @@ export default function PhoneApp() {
             </div>
 
             {/* Viewport */}
-            <div className="main-viewport">{renderScreen()}</div>
+            <div className="main-viewport" style={{ fontSize: `${10 * fontScale}px`, opacity: screen === "idle" ? 1 : brightnessOpacity }}>{renderScreen()}</div>
 
             {/* Soft Key Bar */}
             <div className="softkey-bar">
