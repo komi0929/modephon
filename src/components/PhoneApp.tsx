@@ -36,9 +36,14 @@ type Screen =
   | "messageDetail"
   | "settings"
   | "addressBook"
+  | "addressDetail"
   | "camera"
+  | "cameraShot"
+  | "photoGallery"
   | "internet"
+  | "internetPage"
   | "dataFolder"
+  | "dataFolderSub"
   | "profile";
 
 interface Message {
@@ -101,6 +106,26 @@ export default function PhoneApp() {
   const [clock, setClock] = useState("");
   const [dateStr, setDateStr] = useState("");
   const [colorMode, setColorMode] = useState(true);
+
+  // Settings state
+  const [mannerMode, setMannerMode] = useState(false);
+  const [ringtone, setRingtone] = useState("着信音1");
+  const [wallpaper, setWallpaper] = useState("標準");
+  const [fontSize, setFontSize] = useState("標準");
+  const [brightness, setBrightness] = useState(3);
+
+  // Camera state
+  const [cameraCountdown, setCameraCountdown] = useState(-1);
+  const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string}[]>([]);
+
+  // Internet sub page
+  const [internetPage, setInternetPage] = useState("");
+
+  // Address book detail
+  const [selectedContact, setSelectedContact] = useState<typeof ALL_NPCS[0] | null>(null);
+
+  // Data folder sub
+  const [dataFolderCategory, setDataFolderCategory] = useState("");
 
   // Compose state
   const [composeTo, setComposeTo] = useState("");
@@ -300,7 +325,7 @@ export default function PhoneApp() {
         pushScreen("mainMenu");
         break;
       case "mainMenu":
-        handleMainMenuSelect();
+        handleMainMenuSelect(selectedIndex);
         break;
       case "inbox":
         if (messages.length > 0) {
@@ -328,15 +353,43 @@ export default function PhoneApp() {
         }
         break;
       case "settings":
-        if (selectedIndex === 0) setColorMode((prev) => !prev);
+        handleSettingsSelect();
+        break;
+      case "addressBook":
+        if (ALL_NPCS[selectedIndex]) {
+          setSelectedContact(ALL_NPCS[selectedIndex]);
+          pushScreen("addressDetail");
+        }
+        break;
+      case "addressDetail":
+        if (selectedContact && selectedIndex === 0) {
+          setComposeTo(selectedContact.email.split("@")[0]);
+          setComposeSubject(""); setComposeBody("");
+          setComposeImage(null); setComposeImagePreviewUrl(null);
+          setComposeField("subject"); setToggleState(createInitialState());
+          pushScreen("compose");
+        }
+        break;
+      case "camera":
+        handleCameraShoot();
+        break;
+      case "internet":
+        handleInternetSelect();
+        break;
+      case "internetPage":
+        break;
+      case "dataFolder":
+        handleDataFolderSelect();
+        break;
+      case "photoGallery":
         break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState]);
 
-  const handleMainMenuSelect = useCallback(() => {
+  const handleMainMenuSelect = useCallback((menuIdx?: number) => {
     const items = ["inbox", "compose", "outbox", "camera", "addressBook", "internet", "settings", "data", "profile"] as const;
-    const idx = Math.min(selectedIndex, items.length - 1);
+    const idx = Math.min(menuIdx ?? selectedIndex, items.length - 1);
     switch (items[idx]) {
       case "inbox": pushScreen("inbox"); break;
       case "compose":
@@ -353,6 +406,75 @@ export default function PhoneApp() {
       case "profile": pushScreen("profile"); break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIndex, pushScreen]);
+
+  // --- Settings select ---
+  const handleSettingsSelect = useCallback(() => {
+    switch (selectedIndex) {
+      case 0: setColorMode((p) => !p); break;
+      case 1: setMannerMode((p) => !p); break;
+      case 2: {
+        const tones = ["着信音1", "着信音2", "着信音3", "ﾊﾞｲﾌﾞ", "ﾏﾅｰ"];
+        setRingtone((p) => tones[(tones.indexOf(p) + 1) % tones.length]);
+        break;
+      }
+      case 3: {
+        const wps = ["標準", "夜空☆", "海辺", "花畑", "ｷﾗｷﾗ"];
+        setWallpaper((p) => wps[(wps.indexOf(p) + 1) % wps.length]);
+        break;
+      }
+      case 4: {
+        const sizes = ["小", "標準", "大"];
+        setFontSize((p) => sizes[(sizes.indexOf(p) + 1) % sizes.length]);
+        break;
+      }
+      case 5:
+        setBrightness((p) => (p % 5) + 1);
+        break;
+    }
+  }, [selectedIndex]);
+
+  // --- Camera shoot ---
+  const handleCameraShoot = useCallback(() => {
+    if (selectedIndex === 1) {
+      pushScreen("photoGallery");
+      return;
+    }
+    setCameraCountdown(3);
+    const interval = setInterval(() => {
+      setCameraCountdown((p) => {
+        if (p <= 1) {
+          clearInterval(interval);
+          const newPhoto = {
+            id: `photo-${Date.now()}`,
+            timestamp: new Date().toLocaleString("ja-JP"),
+            label: `写真${String(photoGallery.length + 1).padStart(3, "0")}.jpg`,
+          };
+          setPhotoGallery((prev) => [newPhoto, ...prev]);
+          setCameraCountdown(-1);
+          return -1;
+        }
+        return p - 1;
+      });
+    }, 600);
+  }, [selectedIndex, photoGallery.length, pushScreen]);
+
+  // --- Internet select ---
+  const handleInternetSelect = useCallback(() => {
+    const pages = ["yahoo", "weather", "news", "melody", "wallpapers", "fortune"];
+    if (selectedIndex < pages.length) {
+      setInternetPage(pages[selectedIndex]);
+      pushScreen("internetPage");
+    }
+  }, [selectedIndex, pushScreen]);
+
+  // --- Data folder select ---
+  const handleDataFolderSelect = useCallback(() => {
+    const cats = ["received", "sent", "images", "melodies"];
+    if (selectedIndex < cats.length) {
+      setDataFolderCategory(cats[selectedIndex]);
+      pushScreen("dataFolderSub");
+    }
   }, [selectedIndex, pushScreen]);
 
   // --- Load messages from Supabase ---
@@ -562,8 +684,14 @@ export default function PhoneApp() {
       case "messageDetail": return ["戻る", "", "返信"];
       case "settings": return ["戻る", "変更", ""];
       case "addressBook": return ["戻る", "ﾒｰﾙ", ""];
-      case "camera": case "internet": case "dataFolder": case "profile":
+      case "camera": return ["戻る", "撮影", "ｱﾙﾊﾞﾑ"];
+      case "photoGallery": case "cameraShot":
         return ["戻る", "", ""];
+      case "internet": return ["戻る", "開く", ""];
+      case "internetPage": return ["戻る", "", ""];
+      case "dataFolder": return ["戻る", "開く", ""];
+      case "dataFolderSub": return ["戻る", "選択", ""];
+      case "profile": return ["戻る", "", ""];
       default: return ["", "", ""];
     }
   }, [screen, composeField]);
@@ -627,9 +755,14 @@ export default function PhoneApp() {
       case "messageDetail": return renderMessageDetailScreen();
       case "settings": return renderSettingsScreen();
       case "addressBook": return renderAddressBookScreen();
+      case "addressDetail": return renderAddressDetailScreen();
       case "camera": return renderCameraScreen();
+      case "cameraShot": return renderCameraShotScreen();
+      case "photoGallery": return renderPhotoGalleryScreen();
       case "internet": return renderInternetScreen();
+      case "internetPage": return renderInternetPageScreen();
       case "dataFolder": return renderDataScreen();
+      case "dataFolderSub": return renderDataFolderSubScreen();
       case "profile": return renderProfileScreen();
       default: return null;
     }
@@ -716,7 +849,7 @@ export default function PhoneApp() {
         <div className="grid-menu">
           {items.map((item, i) => (
             <div key={i} className={`grid-menu-item ${selectedIndex === i ? "selected" : ""}`}
-              onClick={() => { setSelectedIndex(i); handleMainMenuSelect(); }}>
+              onClick={() => { setSelectedIndex(i); handleMainMenuSelect(i); }}>
               <div className="icon">{item.icon}</div>
               <div className="label">{item.label}</div>
               {item.badge && (
@@ -828,114 +961,423 @@ export default function PhoneApp() {
     );
   };
 
-  const renderSettingsScreen = () => (
-    <div className="screen-enter">
-      <div className="screen-title">設定</div>
-      {[
-        { label: "画面ﾓｰﾄﾞ", value: colorMode ? "ｶﾗｰ(TFT)" : "ﾓﾉｸﾛ(STN)" },
-        { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--" },
-        { label: "ﾊﾞｰｼﾞｮﾝ", value: "v2.0.0" },
-      ].map((item, i) => (
-        <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
-          onClick={() => { setSelectedIndex(i); if (i === 0) setColorMode((p) => !p); }}>
-          <span>{item.label}</span>
-          <span className="value">{item.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderCameraScreen = () => (
-    <div className="screen-enter">
-      <div className="screen-title">ｶﾒﾗ</div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "70%", gap: 8 }}>
-        <div style={{ width: "80%", aspectRatio: "4/3", background: "#000", border: "1px solid #444", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2 }}>
-          <div style={{ fontSize: "10px", color: "#666" }}>📷 ﾌｧｲﾝﾀﾞｰ</div>
-        </div>
-        <div style={{ fontSize: "9px", opacity: 0.5 }}>添付ﾌｧｲﾙは作成画面から追加</div>
-      </div>
-    </div>
-  );
-
-  const renderInternetScreen = () => (
-    <div className="screen-enter">
-      <div className="screen-title">ｲﾝﾀｰﾈｯﾄ</div>
-      <div style={{ padding: 12, textAlign: "center" }}>
-        <div style={{ fontSize: "12px", marginBottom: 8 }}>J-SKY web</div>
-        <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: 12 }}>ﾎﾟｰﾀﾙｻｲﾄ</div>
-        {["Yahoo!ｹｰﾀｲ", "天気予報", "ﾆｭｰｽ", "着ﾒﾛ♪", "待受画像", "占い"].map((item, i) => (
-          <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
-            onClick={() => setSelectedIndex(i)}>
-            <div className="icon">{["🔍", "☀", "📰", "🎵", "🖼", "🔮"][i]}</div>
-            <div className="label" style={{ fontSize: "11px" }}>{item}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderDataScreen = () => {
-    const imgCount = sentMessages.filter((m) => m.image_url).length + messages.filter((m) => m.image_url).length;
+  // ========== SETTINGS SCREEN ==========
+  const renderSettingsScreen = () => {
+    const settingsItems = [
+      { label: "画面ﾓｰﾄﾞ", value: colorMode ? "ｶﾗｰ(TFT)" : "ﾓﾉｸﾛ(STN)", icon: "🖥" },
+      { label: "ﾏﾅｰﾓｰﾄﾞ", value: mannerMode ? "ON" : "OFF", icon: "🔇" },
+      { label: "着信音", value: ringtone, icon: "🔔" },
+      { label: "待受画面", value: wallpaper, icon: "🎨" },
+      { label: "文字ｻｲｽﾞ", value: fontSize, icon: "🔤" },
+      { label: "画面の明るさ", value: "▮".repeat(brightness) + "▯".repeat(5 - brightness), icon: "☀" },
+      { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
+      { label: "ﾊﾞｰｼﾞｮﾝ", value: "v2.0.0", icon: "ℹ" },
+    ];
     return (
       <div className="screen-enter">
-        <div className="screen-title">ﾃﾞｰﾀ</div>
-        {[
-          { icon: "📨", label: "受信ﾒｰﾙ", value: `${messages.length}件` },
-          { icon: "📤", label: "送信ﾒｰﾙ", value: `${sentMessages.length}件` },
-          { icon: "🖼", label: "画像", value: `${imgCount}件` },
-          { icon: "📊", label: "使用容量", value: `${Math.round((messages.length + sentMessages.length) * 0.8)}KB` },
-        ].map((item, i) => (
-          <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
-            onClick={() => setSelectedIndex(i)}>
-            <span>{item.icon} {item.label}</span>
-            <span className="value">{item.value}</span>
-          </div>
-        ))}
+        <div className="screen-title">設定</div>
+        <div className="viewport-scroll">
+          {settingsItems.map((item, i) => (
+            <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => { setSelectedIndex(i); handleSettingsSelect(); }}>
+              <span>{item.icon} {item.label}</span>
+              <span className="value">{item.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   };
 
-  const renderProfileScreen = () => (
+  // ========== CAMERA SCREEN ==========
+  const renderCameraScreen = () => (
     <div className="screen-enter">
-      <div className="screen-title">ﾌﾟﾛﾌｨｰﾙ</div>
-      <div style={{ padding: 12 }}>
-        <div style={{ textAlign: "center", fontSize: "24px", marginBottom: 8 }}>👤</div>
-        {[
-          { label: "名前", value: user?.display_name || "--" },
-          { label: "ｱﾄﾞﾚｽ", value: user?.virtual_email || "--" },
-          { label: "端末", value: "J-SH51" },
-          { label: "ｷｬﾘｱ", value: "motephon" },
-        ].map((item, i) => (
-          <div key={i} className="settings-item" style={{ cursor: "default" }}>
-            <span>{item.label}</span>
-            <span className="value" style={{ fontSize: "10px" }}>{item.value}</span>
+      <div className="screen-title">📷 ｶﾒﾗ</div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 6, padding: 8 }}>
+        {/* ファインダー */}
+        <div style={{ width: "85%", aspectRatio: "4/3", background: "linear-gradient(135deg, #1a2a1a 0%, #0d1a0d 100%)", border: "2px solid #444", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, position: "relative", overflow: "hidden" }}>
+          {/* ファインダーグリッド */}
+          <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(0deg, transparent, transparent 32%, rgba(255,255,255,0.03) 32%, rgba(255,255,255,0.03) 33.3%), repeating-linear-gradient(90deg, transparent, transparent 49%, rgba(255,255,255,0.03) 49%, rgba(255,255,255,0.03) 50%)", pointerEvents: "none" }} />
+          {/* クロスヘア */}
+          <div style={{ position: "absolute", width: 24, height: 24, border: "1px solid rgba(255,255,255,0.3)", borderRadius: "50%" }} />
+          <div style={{ position: "absolute", width: 1, height: 12, background: "rgba(255,255,255,0.2)", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
+          <div style={{ position: "absolute", width: 12, height: 1, background: "rgba(255,255,255,0.2)", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
+          {/* ステータス */}
+          <div style={{ position: "absolute", top: 4, left: 6, fontSize: "7px", color: "#4a4" }}>● REC</div>
+          <div style={{ position: "absolute", top: 4, right: 6, fontSize: "7px", color: "#aaa" }}>VGA</div>
+          <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: "7px", color: "#aaa" }}>{photoGallery.length}枚</div>
+          <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: "7px", color: "#aaa" }}>📷0.3MP</div>
+          {/* カウントダウン */}
+          {cameraCountdown > 0 && (
+            <div style={{ fontSize: "28px", color: "#f44", fontWeight: "bold", animation: "cursorBlink 0.5s steps(1) infinite" }}>{cameraCountdown}</div>
+          )}
+          {cameraCountdown === 0 && (
+            <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ fontSize: "10px", color: "#333" }}>📸 ﾊﾟｼｬ!</div>
+            </div>
+          )}
+        </div>
+        {/* ボタン */}
+        <div style={{ display: "flex", gap: 8, width: "100%", justifyContent: "center" }}>
+          {[{icon: "📸", label: "撮影", idx: 0}, {icon: "🖼", label: "ｱﾙﾊﾞﾑ", idx: 1}].map(({icon, label, idx}) => (
+            <div key={idx} className={`menu-item ${selectedIndex === idx ? "selected" : ""}`}
+              style={{ flex: 1, justifyContent: "center", padding: "6px 0" }}
+              onClick={() => { setSelectedIndex(idx); if (idx === 1) pushScreen("photoGallery"); else handleCameraShoot(); }}>
+              <div className="icon">{icon}</div>
+              <div className="label" style={{ fontSize: "10px" }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: "8px", opacity: 0.4, textAlign: "center" }}>OK:撮影 / ▶:ｱﾙﾊﾞﾑ</div>
+      </div>
+    </div>
+  );
+
+  const renderCameraShotScreen = () => null;
+
+  const renderPhotoGalleryScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📸 ｱﾙﾊﾞﾑ ({photoGallery.length}枚)</div>
+      <div className="viewport-scroll">
+        {photoGallery.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>写真はまだありません📷\nｶﾒﾗで撮影してね</div>
+        ) : photoGallery.map((photo, i) => (
+          <div key={photo.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+            onClick={() => setSelectedIndex(i)}>
+            <div className="icon" style={{ fontSize: "16px" }}>🖼</div>
+            <div className="label">
+              <div style={{ fontSize: "10px" }}>{photo.label}</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>{photo.timestamp} / 約15KB</div>
+            </div>
           </div>
         ))}
       </div>
     </div>
   );
 
-  const renderAddressBookScreen = () => (
+  // ========== INTERNET SCREEN ==========
+  const renderInternetScreen = () => (
     <div className="screen-enter">
-      <div className="screen-title">ｱﾄﾞﾚｽ帳</div>
-      {ALL_NPCS.map((npc, i) => (
-        <div key={npc.email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
-          onClick={() => {
-            setSelectedIndex(i);
-            setComposeTo(npc.email.split("@")[0]); setComposeSubject(""); setComposeBody("");
-            setComposeImage(null); setComposeImagePreviewUrl(null);
-            setComposeField("subject"); setToggleState(createInitialState());
-            pushScreen("compose");
-          }}>
-          <div className="icon">👤</div>
-          <div className="label">
-            <div style={{ fontSize: "11px" }}>{npc.displayName}</div>
-            <div style={{ fontSize: "8px", opacity: 0.5 }}>{npc.email}</div>
-          </div>
+      <div className="screen-title">🌐 J-SKY web</div>
+      <div style={{ padding: "4px 8px" }}>
+        <div style={{ textAlign: "center", fontSize: "12px", fontWeight: "bold", padding: "6px 0 2px", borderBottom: "1px dashed rgba(0,0,0,0.15)" }}>J-SKY ﾎﾟｰﾀﾙ</div>
+        <div style={{ textAlign: "center", fontSize: "8px", opacity: 0.5, padding: "2px 0 6px" }}>28.8kbps接続中...</div>
+        <div className="viewport-scroll">
+          {["Yahoo!ｹｰﾀｲ", "天気予報", "ﾆｭｰｽ速報", "着ﾒﾛ♪", "待受画像DL", "今日の占い"].map((item, i) => (
+            <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => { setSelectedIndex(i); handleInternetSelect(); }}>
+              <div className="icon">{["🔍", "☀", "📰", "🎵", "🖼", "🔮"][i]}</div>
+              <div className="label" style={{ fontSize: "11px" }}>{item}</div>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   );
+
+  const renderInternetPageScreen = () => {
+    const pages: Record<string, {title: string; content: React.ReactNode}> = {
+      yahoo: { title: "Yahoo!ｹｰﾀｲ", content: (
+        <div style={{ padding: 8 }}>
+          <div className="screen-title" style={{ background: "#b00", color: "#fff", fontWeight: "bold" }}>Yahoo! JAPAN</div>
+          <div style={{ padding: "8px 4px", fontSize: "10px" }}>
+            <div style={{ fontWeight: "bold", marginBottom: 4 }}>🔍 検索</div>
+            <div style={{ background: "rgba(0,0,0,0.05)", padding: 4, borderRadius: 2, marginBottom: 8, fontSize: "9px", opacity: 0.5 }}>検索ﾜｰﾄﾞを入力...</div>
+            <div style={{ borderBottom: "1px dotted rgba(0,0,0,0.2)", paddingBottom: 4, marginBottom: 4 }}>📱 着うた♪ﾗﾝｷﾝｸﾞ</div>
+            <div style={{ borderBottom: "1px dotted rgba(0,0,0,0.2)", paddingBottom: 4, marginBottom: 4 }}>🎮 ﾐﾆｹﾞｰﾑ</div>
+            <div style={{ borderBottom: "1px dotted rgba(0,0,0,0.2)", paddingBottom: 4, marginBottom: 4 }}>⚾ ｽﾎﾟｰﾂ速報</div>
+            <div style={{ borderBottom: "1px dotted rgba(0,0,0,0.2)", paddingBottom: 4, marginBottom: 4 }}>🎬 映画情報</div>
+            <div style={{ borderBottom: "1px dotted rgba(0,0,0,0.2)", paddingBottom: 4 }}>💰 ｵｰｸｼｮﾝ</div>
+          </div>
+        </div>
+      )},
+      weather: { title: "天気予報", content: (
+        <div style={{ padding: 8 }}>
+          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 8, fontSize: "11px" }}>☀ 全国天気予報</div>
+          {[{area: "東京", icon: "☀", temp: "18℃/8℃", txt: "晴れ"}, {area: "大阪", icon: "⛅", temp: "16℃/7℃", txt: "曇り時々晴れ"}, {area: "札幌", icon: "❄", temp: "2℃/-5℃", txt: "雪"}, {area: "福岡", icon: "🌧", temp: "14℃/6℃", txt: "雨のち曇"}, {area: "沖縄", icon: "☀", temp: "22℃/16℃", txt: "晴れ"}].map((w, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
+              <span>{w.icon} {w.area}</span>
+              <span style={{ opacity: 0.7 }}>{w.temp}</span>
+              <span style={{ fontSize: "9px" }}>{w.txt}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 8, textAlign: "center" }}>更新: {dateStr} {clock}</div>
+        </div>
+      )},
+      news: { title: "ﾆｭｰｽ速報", content: (
+        <div style={{ padding: 8 }}>
+          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>📰 ﾆｭｰｽ速報</div>
+          {["'ﾓｰﾆﾝｸﾞ娘。新曲ｵﾘｺﾝ1位獲得'", "'ﾜｰﾙﾄﾞｶｯﾌﾟ日本代表合宿ｽﾀｰﾄ'", "'新型携帯続々登場 ｶﾒﾗ機能が進化'", "'渋谷109春ﾌｧｯｼｮﾝ特集'", "'人気ﾄﾞﾗﾏ最終回 視聴率30%超'"].map((news, i) => (
+            <div key={i} style={{ padding: "5px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
+              <span style={{ color: colorMode ? "#c33" : "inherit", fontSize: "9px" }}>[速報]</span> {news}
+            </div>
+          ))}
+          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>→ 詳細は各ﾆｭｰｽをｸﾘｯｸ</div>
+        </div>
+      )},
+      melody: { title: "着ﾒﾛ♪", content: (
+        <div style={{ padding: 8 }}>
+          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🎵 着ﾒﾛﾗﾝｷﾝｸﾞ</div>
+          <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 6, textAlign: "center" }}>40和音対応 / 各3KB</div>
+          {[{rank: 1, song: "LOVEﾏｼｰﾝ - ﾓｰﾆﾝｸﾞ娘。", hot: true}, {rank: 2, song: "Automatic - 宇多田ﾋｶﾙ"}, {rank: 3, song: "ﾂﾅﾐ - ｻｻﾞﾝ"}, {rank: 4, song: "SEASONS - 浜崎あゆみ"}, {rank: 5, song: "桜坂 - 福山雅治"}, {rank: 6, song: "夏祭り - Whiteberry"}, {rank: 7, song: "secret base - ZONE"}].map((m) => (
+            <div key={m.rank} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 0", borderBottom: "1px dotted rgba(0,0,0,0.1)", fontSize: "10px" }}>
+              <span style={{ fontWeight: "bold", width: 14, fontSize: "11px", color: m.rank <= 3 ? (colorMode ? "#c33" : "inherit") : "inherit" }}>{m.rank}</span>
+              <span style={{ flex: 1 }}>{m.song}</span>
+              {m.hot && <span style={{ fontSize: "7px", background: colorMode ? "#c33" : "#333", color: "#fff", borderRadius: 2, padding: "0 3px" }}>HOT</span>}
+              <span style={{ fontSize: "8px", opacity: 0.5 }}>♪DL</span>
+            </div>
+          ))}
+        </div>
+      )},
+      wallpapers: { title: "待受画像DL", content: (
+        <div style={{ padding: 8 }}>
+          <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🖼 待受画像</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+            {["🌸桜", "🌊海", "🌙月", "🐱猫", "🌈虹", "⭐星空", "🗼東京", "🎀ﾘﾎﾞﾝ", "💎宝石"].map((w, i) => (
+              <div key={i} style={{ aspectRatio: "3/4", background: "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, fontSize: "11px", flexDirection: "column", gap: 2, cursor: "pointer" }}>
+                <div style={{ fontSize: "18px" }}>{w.slice(0, 2)}</div>
+                <div style={{ fontSize: "8px" }}>{w.slice(2)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 6, textAlign: "center" }}>120×160ﾋﾟｸｾﾙ / 各5KB</div>
+        </div>
+      )},
+      fortune: { title: "今日の占い", content: (() => {
+        const signs = ["♈牡羊座", "♉牡牛座", "♊双子座", "♋蟹座", "♌獅子座", "♍乙女座", "♎天秤座", "♏蠍座", "♐射手座", "♑山羊座", "♒水瓶座", "♓魚座"];
+        const lucks = ["◎大吉", "○吉", "○吉", "△小吉", "◎大吉", "○吉", "×凶", "○吉", "◎大吉", "△小吉", "○吉", "○吉"];
+        return (
+          <div style={{ padding: 8 }}>
+            <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: 6, fontSize: "11px" }}>🔮 今日の運勢</div>
+            <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: 6, textAlign: "center" }}>{dateStr}の占い</div>
+            {signs.map((sign, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px dotted rgba(0,0,0,0.08)", fontSize: "9px" }}>
+                <span>{sign}</span>
+                <span style={{ fontWeight: lucks[i].includes("大吉") ? "bold" : "normal", color: lucks[i].includes("凶") && colorMode ? "#c33" : "inherit" }}>{lucks[i]}</span>
+              </div>
+            ))}
+            <div style={{ fontSize: "9px", marginTop: 8, padding: 6, background: "rgba(0,0,0,0.04)", borderRadius: 2 }}>ﾗｯｷｰｱｲﾃﾑ: ☆ｽﾄﾗｯﾌﾟ</div>
+          </div>
+        );
+      })()},
+    };
+    const page = pages[internetPage] || { title: "404", content: <div style={{ padding: 12, textAlign: "center", fontSize: "10px" }}>ﾍﾟｰｼﾞが見つかりません</div> };
+    return (
+      <div className="screen-enter" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div className="screen-title">🌐 {page.title}</div>
+        <div className="viewport-scroll">{page.content}</div>
+      </div>
+    );
+  };
+
+  // ========== DATA FOLDER SCREEN ==========
+  const renderDataScreen = () => {
+    const imgCount = photoGallery.length + sentMessages.filter((m) => m.image_url).length + messages.filter((m) => m.image_url).length;
+    const totalKb = Math.round((messages.length + sentMessages.length) * 0.8 + photoGallery.length * 15);
+    const items = [
+      { icon: "📨", label: "受信ﾒｰﾙ", value: `${messages.length}件` },
+      { icon: "📤", label: "送信ﾒｰﾙ", value: `${sentMessages.length}件` },
+      { icon: "🖼", label: "画像", value: `${imgCount}件` },
+      { icon: "🎵", label: "着信音/着ﾒﾛ", value: "5件" },
+    ];
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">📁 ﾃﾞｰﾀﾌｫﾙﾀﾞ</div>
+        <div className="viewport-scroll">
+          {items.map((item, i) => (
+            <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => { setSelectedIndex(i); handleDataFolderSelect(); }}>
+              <span>{item.icon} {item.label}</span>
+              <span className="value">{item.value}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 8, padding: "6px 8px", borderTop: "1px solid rgba(0,0,0,0.1)", fontSize: "9px", opacity: 0.6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>💾 使用容量</span>
+              <span>{totalKb}KB / 1024KB</span>
+            </div>
+            <div style={{ marginTop: 4, height: 6, background: "rgba(0,0,0,0.1)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${Math.min(100, (totalKb / 1024) * 100)}%`, background: colorMode ? "#4466aa" : "#666", borderRadius: 2 }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDataFolderSubScreen = () => {
+    const contents: Record<string, React.ReactNode> = {
+      received: (
+        <div>
+          {messages.length === 0 ? (
+            <div style={{ padding: 16, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>ﾃﾞｰﾀなし</div>
+          ) : messages.map((msg, i) => (
+            <div key={msg.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => { setSelectedIndex(i); setSelectedMessage(msg); pushScreen("messageDetail"); }}>
+              <div className="icon">📨</div>
+              <div className="label">
+                <div style={{ fontSize: "10px" }}>{getSenderName(msg.sender_email)}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{msg.subject}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+      sent: (
+        <div>
+          {sentMessages.length === 0 ? (
+            <div style={{ padding: 16, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>ﾃﾞｰﾀなし</div>
+          ) : sentMessages.map((msg, i) => (
+            <div key={msg.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => { setSelectedIndex(i); setSelectedMessage(msg); pushScreen("messageDetail"); }}>
+              <div className="icon">📤</div>
+              <div className="label">
+                <div style={{ fontSize: "10px" }}>To: {getSenderName(msg.receiver_email)}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{msg.subject}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+      images: (
+        <div>
+          {photoGallery.length === 0 ? (
+            <div style={{ padding: 16, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>画像なし\nｶﾒﾗで撮影してね📷</div>
+          ) : photoGallery.map((photo, i) => (
+            <div key={photo.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => setSelectedIndex(i)}>
+              <div className="icon">🖼</div>
+              <div className="label">
+                <div style={{ fontSize: "10px" }}>{photo.label}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{photo.timestamp}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+      melodies: (
+        <div>
+          {["着信音1 (ﾃﾞﾌｫﾙﾄ)", "着信音2 (ﾎﾟﾘﾌｫﾆｰ)", "着信音3 (和音)", "ﾊﾞｲﾌﾞﾚｰｼｮﾝ", "ﾏﾅｰﾓｰﾄﾞ"].map((melody, i) => (
+            <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => setSelectedIndex(i)}>
+              <div className="icon">🎵</div>
+              <div className="label">
+                <div style={{ fontSize: "10px" }}>{melody}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{i < 3 ? "40和音 / 3KB" : "ｼｽﾃﾑ"}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+    };
+    const catLabels: Record<string, string> = { received: "📨 受信ﾒｰﾙ", sent: "📤 送信ﾒｰﾙ", images: "🖼 画像", melodies: "🎵 着信音" };
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">{catLabels[dataFolderCategory] || "ﾃﾞｰﾀ"}</div>
+        <div className="viewport-scroll">
+          {contents[dataFolderCategory] || <div style={{ padding: 12, textAlign: "center", fontSize: "10px" }}>ﾃﾞｰﾀがありません</div>}
+        </div>
+      </div>
+    );
+  };
+
+  // ========== PROFILE SCREEN ==========
+  const renderProfileScreen = () => {
+    const totalMails = messages.length + sentMessages.length;
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">👤 ﾌﾟﾛﾌｨｰﾙ</div>
+        <div className="viewport-scroll" style={{ padding: 8 }}>
+          <div style={{ textAlign: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: "32px", marginBottom: 2 }}>👤</div>
+            <div style={{ fontSize: "13px", fontWeight: "bold" }}>{user?.display_name || "--"}</div>
+          </div>
+          {[
+            { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
+            { label: "端末名", value: "J-SH51", icon: "📱" },
+            { label: "ｷｬﾘｱ", value: "motephon (J-ﾌｫﾝ)", icon: "📡" },
+            { label: "ﾒﾓﾘ", value: "1MB内蔵 + SDｶｰﾄﾞ", icon: "💾" },
+            { label: "ｶﾒﾗ", value: "0.3MP CMOS (VGA)", icon: "📷" },
+            { label: "液晶", value: colorMode ? "65536色 TFT" : "ﾓﾉｸﾛ STN", icon: "🖥" },
+            { label: "ﾒｰﾙ通数", value: `${totalMails}通`, icon: "✉" },
+            { label: "写真枚数", value: `${photoGallery.length}枚`, icon: "🖼" },
+            { label: "ﾊﾟｹｯﾄ通信", value: "28.8kbps", icon: "🌐" },
+            { label: "Java", value: "対応 (100KB)", icon: "☕" },
+            { label: "着信音", value: "40和音", icon: "🎵" },
+            { label: "ﾊﾞｰｼﾞｮﾝ", value: "v2.0.0", icon: "ℹ" },
+          ].map((item, i) => (
+            <div key={i} className="settings-item" style={{ cursor: "default" }}>
+              <span style={{ fontSize: "10px" }}>{item.icon} {item.label}</span>
+              <span className="value" style={{ fontSize: "9px" }}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ========== ADDRESS BOOK SCREEN ==========
+  const renderAddressBookScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📖 ｱﾄﾞﾚｽ帳 ({ALL_NPCS.length}件)</div>
+      <div className="viewport-scroll">
+        {ALL_NPCS.map((npc, i) => (
+          <div key={npc.email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+            onClick={() => {
+              setSelectedIndex(i);
+              setSelectedContact(npc);
+              pushScreen("addressDetail");
+            }}>
+            <div className="icon" style={{ fontSize: "16px" }}>👤</div>
+            <div className="label">
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>{npc.displayName}</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>{npc.email}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderAddressDetailScreen = () => {
+    if (!selectedContact) return null;
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">📖 連絡先詳細</div>
+        <div style={{ padding: 12 }}>
+          <div style={{ textAlign: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: "28px", marginBottom: 2 }}>👤</div>
+            <div style={{ fontSize: "13px", fontWeight: "bold" }}>{selectedContact.displayName}</div>
+          </div>
+          <div className="mail-header" style={{ borderBottom: "none" }}>
+            <div className="row"><span className="label">ﾒｰﾙ</span><span style={{ fontSize: "10px" }}>{selectedContact.email}</span></div>
+            <div className="row"><span className="label">ｸﾞﾙｰﾌﾟ</span><span style={{ fontSize: "10px" }}>友達</span></div>
+            <div className="row"><span className="label">ﾒﾓ</span><span style={{ fontSize: "10px" }}>{selectedContact.personality === "gyaru" ? "渋谷109が好き♪" : "ｾﾝﾀｰ街によくいる"}</span></div>
+          </div>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+            {[
+              { label: "📧 ﾒｰﾙを書く", idx: 0 },
+              { label: "📖 ﾒｰﾙ履歴", idx: 1 },
+            ].map(({label, idx}) => (
+              <div key={idx} className={`menu-item ${selectedIndex === idx ? "selected" : ""}`}
+                onClick={() => {
+                  setSelectedIndex(idx);
+                  if (idx === 0) {
+                    setComposeTo(selectedContact.email.split("@")[0]);
+                    setComposeSubject(""); setComposeBody("");
+                    setComposeImage(null); setComposeImagePreviewUrl(null);
+                    setComposeField("subject"); setToggleState(createInitialState());
+                    pushScreen("compose");
+                  }
+                }}>
+                <div className="label" style={{ fontSize: "11px" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const softKeys = getSoftKeys();
 
