@@ -865,18 +865,37 @@ export default function PhoneApp() {
     </div>
   );
 
-  const renderIdleScreen = () => (
-    <div className="idle-screen screen-enter">
-      <div className="idle-clock">{clock}</div>
-      <div className="idle-date">{dateStr}</div>
-      <div className="idle-carrier">motephon</div>
-      {unreadCount > 0 && (
-        <div className="idle-notification">
-          <span className="envelope-icon">✉</span> 新着ﾒｰﾙ {unreadCount}件
-        </div>
-      )}
-    </div>
-  );
+  const renderIdleScreen = () => {
+    // 壁紙に応じた背景
+    const wallpaperBg: Record<string, string> = {
+      "標準": "linear-gradient(180deg, #1a1a3a 0%, #2a2a5a 100%)",
+      "夜空☆": "linear-gradient(180deg, #0a0a2a 0%, #1a1a4a 50%, #0a0a2a 100%)",
+      "海辺": "linear-gradient(180deg, #87ceeb 0%, #4682b4 40%, #daa520 80%, #f5deb3 100%)",
+      "花畑": "linear-gradient(180deg, #87ceeb 0%, #98fb98 50%, #90ee90 100%)",
+      "ｷﾗｷﾗ": "linear-gradient(135deg, #ff69b4 0%, #ff1493 25%, #da70d6 50%, #ba55d3 75%, #ff69b4 100%)",
+    };
+    // 文字サイズに応じたフォントスケール
+    const fontScale: Record<string, number> = { "小": 0.85, "標準": 1, "大": 1.2 };
+    const scale = fontScale[fontSize] || 1;
+    // 明るさに応じたopacity
+    const brightnessOpacity = 0.4 + (brightness / 5) * 0.6;
+
+    return (
+      <div className="idle-screen screen-enter" style={{
+        background: wallpaperBg[wallpaper] || wallpaperBg["標準"],
+        opacity: brightnessOpacity,
+      }}>
+        <div className="idle-clock" style={{ fontSize: `${28 * scale}px` }}>{clock}</div>
+        <div className="idle-date" style={{ fontSize: `${10 * scale}px` }}>{dateStr}</div>
+        <div className="idle-carrier" style={{ fontSize: `${8 * scale}px` }}>motephon</div>
+        {unreadCount > 0 && (
+          <div className="idle-notification" style={{ fontSize: `${10 * scale}px` }}>
+            <span className="envelope-icon">✉</span> 新着ﾒｰﾙ {unreadCount}件
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderMainMenuScreen = () => {
     const items = [
@@ -1080,7 +1099,21 @@ export default function PhoneApp() {
     </div>
   );
 
-  const renderCameraShotScreen = () => null;
+  const renderCameraShotScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📷 撮影完了</div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: 12, gap: 8 }}>
+        <div style={{ width: "80%", aspectRatio: "4/3", background: "linear-gradient(135deg, #2a3a2a 0%, #1a2a1a 100%)", border: "2px solid #555", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: "32px" }}>📸</div>
+        </div>
+        <div style={{ fontSize: "10px", textAlign: "center" }}>保存しました！</div>
+        <div style={{ fontSize: "9px", opacity: 0.5, textAlign: "center" }}>
+          {photoGallery.length > 0 ? photoGallery[0].label : ""}<br/>
+          VGA / 約15KB
+        </div>
+      </div>
+    </div>
+  );
 
   const renderPhotoGalleryScreen = () => (
     <div className="screen-enter">
@@ -1514,6 +1547,16 @@ export default function PhoneApp() {
                     setComposeImage(null); setComposeImagePreviewUrl(null);
                     setComposeField("subject"); setToggleState(createInitialState());
                     pushScreen("compose");
+                  } else if (idx === 1) {
+                    // メール履歴: そのNPCとの受信/送信メッセージをフィルタして受信ボックスとして表示
+                    const historyMessages = [
+                      ...messages.filter(m => m.sender_email === selectedContact.email),
+                      ...sentMessages.filter(m => m.receiver_email === selectedContact.email),
+                    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                    if (historyMessages.length > 0) {
+                      setMessages(historyMessages); // 一時的にフィルタ表示
+                      pushScreen("inbox");
+                    }
                   }
                 }}>
                 <div className="label" style={{ fontSize: "11px" }}>{label}</div>
