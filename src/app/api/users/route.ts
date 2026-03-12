@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export async function GET(request: NextRequest) {
@@ -14,6 +14,11 @@ export async function GET(request: NextRequest) {
   });
 
   const query = request.nextUrl.searchParams.get("q") || "";
+
+  // Validate: only allow 1-4 digit numbers
+  if (query && !/^\d{1,4}$/.test(query)) {
+    return NextResponse.json({ users: [] });
+  }
 
   // 4桁数字検索 → virtual_email部分一致
   const searchEmail = query ? `${query}@modephon.ne.jp` : "";

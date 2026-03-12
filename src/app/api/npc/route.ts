@@ -21,6 +21,14 @@ export async function POST(request: NextRequest) {
   try {
     const { npcEmail, userMessage, senderEmail } = await request.json();
 
+    // Input validation
+    if (typeof npcEmail !== "string" || typeof userMessage !== "string" || typeof senderEmail !== "string") {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    }
+    if (userMessage.length > 2000 || senderEmail.length > 100 || npcEmail.length > 100) {
+      return NextResponse.json({ error: "Input too long" }, { status: 400 });
+    }
+
     // Find NPC
     const npc =
       npcEmail === NPC_GYARU.email
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
     // DBなしの場合はクライアント側で処理
     return NextResponse.json({ reply, persisted: false });
   } catch (error) {
-    console.error("NPC API error:", error);
+    console.error("NPC API error");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

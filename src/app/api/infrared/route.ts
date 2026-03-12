@@ -24,8 +24,11 @@ function generateCode(): string {
 export async function POST(request: NextRequest) {
   try {
     const { senderEmail, senderName } = await request.json();
-    if (!senderEmail) {
-      return NextResponse.json({ error: "Missing sender" }, { status: 400 });
+    if (typeof senderEmail !== "string" || senderEmail.length > 100) {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    }
+    if (senderName && (typeof senderName !== "string" || senderName.length > 50)) {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
     const admin = getAdminClient();
@@ -84,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ code, expiresIn: 120 });
   } catch (error) {
-    console.error("Infrared send error:", error);
+    console.error("Infrared send error");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -98,8 +101,8 @@ export async function GET(request: NextRequest) {
     const code = request.nextUrl.searchParams.get("code");
     const receiverEmail = request.nextUrl.searchParams.get("receiver");
 
-    if (!code) {
-      return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    if (!code || typeof code !== "string" || !/^\d{6}$/.test(code)) {
+      return NextResponse.json({ error: "Invalid code" }, { status: 400 });
     }
 
     const admin = getAdminClient();
@@ -147,7 +150,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Infrared receive error:", error);
+    console.error("Infrared receive error");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
