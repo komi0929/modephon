@@ -20,7 +20,7 @@ import {
   cycleMode,
   getModeLabel,
   getCurrentCandidates,
-  KEY_MAP,
+  KEY_LABELS,
 } from "@/lib/toggleInput";
 
 /* =========================================
@@ -83,21 +83,7 @@ const DEMO_MESSAGES: Message[] = [
   },
 ];
 
-/* Key labels for the 12-key pad */
-const NUMPAD_KEYS = [
-  { key: "1", label: "あ", sub: "あいうえお" },
-  { key: "2", label: "か", sub: "かきくけこ" },
-  { key: "3", label: "さ", sub: "さしすせそ" },
-  { key: "4", label: "た", sub: "たちつてと" },
-  { key: "5", label: "な", sub: "なにぬねの" },
-  { key: "6", label: "は", sub: "はひふへほ" },
-  { key: "7", label: "ま", sub: "まみむめも" },
-  { key: "8", label: "や", sub: "やゆよ" },
-  { key: "9", label: "ら", sub: "らりるれろ" },
-  { key: "*", label: "記号", sub: "。、!?" },
-  { key: "0", label: "わ", sub: "わをんー" },
-  { key: "#", label: "空白", sub: "" },
-];
+/* Key labels are now imported from toggleInput.ts as KEY_LABELS */
 
 /* =========================================
    PhoneApp Component
@@ -134,7 +120,7 @@ export default function PhoneApp() {
   const [isLogin, setIsLogin] = useState(false);
 
   // Toggle input state
-  const [toggleState, setToggleState] = useState<ToggleInputState>(createInitialState());
+  const [toggleState, setToggleState] = useState<ToggleInputState>(createInitialState("", "number"));
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -391,39 +377,43 @@ export default function PhoneApp() {
     return () => { supabase.removeChannel(channel); };
   }, [user, supabase]);
 
-  // --- Register ---
+  // --- Register (4桁数字) ---
   const handleRegister = useCallback(async () => {
     let username = regUsername;
     let password = regPassword;
     if (toggleState.text) {
       if (regField === "email") username += toggleState.text;
       else password += toggleState.text;
-      setToggleState(createInitialState());
+      setToggleState(createInitialState("", "number"));
     }
 
     if (regStep === "email") {
       if (regField === "email") {
-        if (!username.trim()) { setRegError("ﾒｰﾙｱﾄﾞﾚｽを入力"); return; }
+        if (!/^\d{4}$/.test(username)) { setRegError("4ケタの番号を入力してね"); return; }
         setRegUsername(username);
         setRegStep("password");
         setRegField("password");
         setRegError("");
-        setToggleState(createInitialState());
+        setToggleState(createInitialState("", "number"));
         return;
       }
     }
 
-    if (!password.trim() || password.length < 6) {
-      setRegError("ﾊﾟｽﾜｰﾄﾞは6文字以上"); return;
+    if (!/^\d{4}$/.test(password)) {
+      setRegError("4ケタの番号を入力してね"); return;
     }
     setRegPassword(password);
 
     const virtualEmail = `${username}@motephon.ne.jp`;
+    const authEmail = `${username}@motephon.app`;
+    // Supabase Authは6文字以上必要なので、パスワードをパディング
+    const authPassword = `mp${password}xx`;
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: `${username}@motephon.app`, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (error) {
           if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
+          if (error.message.includes("Invalid login")) { setRegError("番号が違うょ…"); return; }
           setRegError(error.message); return;
         }
         if (data.user) {
@@ -434,10 +424,10 @@ export default function PhoneApp() {
           setScreen("idle");
         }
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: `${username}@motephon.app`, password });
+        const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
         if (error) {
           if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
-          if (error.message.includes("already registered")) { setRegError("既に登録済み。ﾛｸﾞｲﾝに切替"); setIsLogin(true); return; }
+          if (error.message.includes("already registered")) { setRegError("もう登録してあるょ！\nﾛｸﾞｲﾝに切替えてね"); setIsLogin(true); return; }
           setRegError(error.message); return;
         }
         if (data.user) {
@@ -642,29 +632,44 @@ export default function PhoneApp() {
       <div className="title">motephon</div>
       <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 8 }}>写ﾒｰﾙ ﾈｯﾄﾜｰｸ</div>
       <div style={{ fontSize: "10px", width: "100%", textAlign: "left", marginBottom: 4 }}>
-        {regStep === "email" ? "ﾒｰﾙｱﾄﾞﾚｽ設定" : "ﾊﾟｽﾜｰﾄﾞ設定"}
+        {regStep === "email" ? "📱 ﾏｲ番号を決めよう" : "🔒 ﾊﾟｽﾜｰﾄﾞを決めよう"}
         {isLogin && <span style={{ fontSize: "8px", opacity: 0.7 }}> (ﾛｸﾞｲﾝ)</span>}
+      </div>
+      <div style={{ fontSize: "9px", opacity: 0.6, marginBottom: 4, textAlign: "center" }}>
+        {regStep === "email" ? "好きな4ケタの数字を入力してね" : "4ケタの暗証番号を入力してね"}
       </div>
       {regStep === "email" ? (
         <>
           <div className={`auth-field-value ${regField === "email" ? "active" : ""}`}
             onClick={() => setRegField("email")}>
-            {getFieldDisplay(regUsername, "email")}
+            <span style={{ letterSpacing: "4px", fontSize: "18px" }}>{getFieldDisplay(regUsername, "email")}</span>
             {regField === "email" && <span className="cursor-blink" />}
           </div>
           <div className="domain" style={{ width: "100%", textAlign: "right", fontSize: "10px", opacity: 0.5 }}>
             @motephon.ne.jp
           </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: "4px", marginTop: 2 }}>
+            {[0,1,2,3].map(i => (
+              <div key={i} style={{ width: 12, height: 3, borderRadius: 1, background: getFieldDisplay(regUsername, "email").length > i ? "#6af" : "rgba(255,255,255,0.15)" }} />
+            ))}
+          </div>
         </>
       ) : (
-        <div className={`auth-field-value ${regField === "password" ? "active" : ""}`}
-          onClick={() => setRegField("password")}>
-          {"●".repeat(getFieldDisplay(regPassword, "password").length)}
-          {regField === "password" && <span className="cursor-blink" />}
-        </div>
+        <>
+          <div className={`auth-field-value ${regField === "password" ? "active" : ""}`}
+            onClick={() => setRegField("password")}>
+            <span style={{ letterSpacing: "8px", fontSize: "20px" }}>{"●".repeat(getFieldDisplay(regPassword, "password").length)}</span>
+            {regField === "password" && <span className="cursor-blink" />}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: "4px", marginTop: 4 }}>
+            {[0,1,2,3].map(i => (
+              <div key={i} style={{ width: 12, height: 3, borderRadius: 1, background: getFieldDisplay(regPassword, "password").length > i ? "#6af" : "rgba(255,255,255,0.15)" }} />
+            ))}
+          </div>
+        </>
       )}
       {regError && <div className="error-text">{regError}</div>}
-      <div style={{ fontSize: "8px", opacity: 0.3, marginTop: 8 }}>※下のｷｰで入力 / 決定で次へ</div>
+      <div style={{ fontSize: "8px", opacity: 0.3, marginTop: 8 }}>※数字ｷｰで入力 → 決定で次へ</div>
       <div style={{ fontSize: "8px", opacity: 0.5, marginTop: 4, cursor: "pointer", textDecoration: "underline" }}
         onClick={() => { setIsLogin((p) => !p); setRegError(""); }}>
         {isLogin ? "新規登録に切替" : "ﾛｸﾞｲﾝに切替"}
@@ -1011,14 +1016,14 @@ export default function PhoneApp() {
 
         {/* 下段: 12キー */}
         <div className="numpad">
-          {NUMPAD_KEYS.map(({ key, label, sub }) => (
+          {KEY_LABELS[isInputActive ? toggleState.mode : "number"].map(({ key, label, sub }) => (
             <button
               key={key}
               className="num-key"
               onClick={() => handleNumpadKey(key)}
             >
-              <span className="key-num">{isInputActive && toggleState.mode === "hiragana" ? label : key}</span>
-              <span className="key-chars">{isInputActive ? (toggleState.mode === "hiragana" ? sub : (KEY_MAP[key] || []).slice(0, 5).join("")) : ""}</span>
+              <span className="key-num">{isInputActive ? label : key}</span>
+              <span className="key-chars">{isInputActive ? sub : ""}</span>
             </button>
           ))}
         </div>
