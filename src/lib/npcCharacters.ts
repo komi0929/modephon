@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NPC Characters - 平成ギャル＆ギャル男
  */
 
@@ -14,7 +14,7 @@ export interface NpcCharacter {
 }
 
 export const NPC_GYARU: NpcCharacter = {
-  email: "maki@motephon.ne.jp",
+  email: "maki@modephon.ne.jp",
   displayName: "☆ﾏｷ☆",
   personality: "gyaru",
   welcomeMessage: {
@@ -58,7 +58,7 @@ export const NPC_GYARU: NpcCharacter = {
 };
 
 export const NPC_GYARUO: NpcCharacter = {
-  email: "takuya@motephon.ne.jp",
+  email: "takuya@modephon.ne.jp",
   displayName: "★ＴＡＫＵ★",
   personality: "gyaruo",
   welcomeMessage: {

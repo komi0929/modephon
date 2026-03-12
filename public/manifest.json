@@ -1,6 +1,6 @@
-{
-  "name": "motephon - 写ﾒｰﾙ体験",
-  "short_name": "motephon",
+﻿{
+  "name": "modephon - 写ﾒｰﾙ体験",
+  "short_name": "modephon",
   "description": "2000年代初頭の写メール体験を完全再現したP2Pメッセージングアプリ",
   "start_url": "/",
   "display": "standalone",

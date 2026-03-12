@@ -48,7 +48,11 @@ type Screen =
   | "userSearch"
   | "infraredSend"
   | "infraredReceive"
-  | "profileEdit";
+  | "profileEdit"
+  | "photoView"
+  | "terms"
+  | "confirmLogout"
+  | "confirmDelete";
 
 interface Message {
   id: string;
@@ -77,7 +81,7 @@ const DEMO_MESSAGES: Message[] = [
   {
     id: "demo-1",
     sender_email: NPC_GYARU.email,
-    receiver_email: "user@motephon.ne.jp",
+    receiver_email: "user@modephon.ne.jp",
     subject: NPC_GYARU.welcomeMessage.subject,
     body: NPC_GYARU.welcomeMessage.body,
     is_read: false,
@@ -86,7 +90,7 @@ const DEMO_MESSAGES: Message[] = [
   {
     id: "demo-2",
     sender_email: NPC_GYARUO.email,
-    receiver_email: "user@motephon.ne.jp",
+    receiver_email: "user@modephon.ne.jp",
     subject: NPC_GYARUO.welcomeMessage.subject,
     body: NPC_GYARUO.welcomeMessage.body,
     is_read: false,
@@ -394,7 +398,7 @@ export default function PhoneApp() {
     // 画面ごとの上限を設定
     const maxMap: Partial<Record<Screen, number>> = {
       mainMenu: 8, inbox: messages.length - 1, outbox: sentMessages.length - 1,
-      settings: 7, addressBook: ALL_NPCS.length - 1, internet: 5,
+      settings: 10, addressBook: ALL_NPCS.length - 1, internet: 5,
       addressDetail: 1, dataFolder: 3, photoGallery: photoGallery.length - 1,
       camera: 1,
     };
@@ -552,8 +556,11 @@ export default function PhoneApp() {
       case 5:
         setBrightness((p) => (p % 5) + 1);
         break;
+      case 7: pushScreen("terms"); break;
+      case 8: pushScreen("confirmLogout"); break;
+      case 9: pushScreen("confirmDelete"); break;
     }
-  }, [selectedIndex]);
+  }, [selectedIndex, pushScreen]);
 
   // --- Camera shoot ---
   const handleCameraShoot = useCallback(() => {
@@ -677,8 +684,8 @@ export default function PhoneApp() {
     }
     setRegPassword(password);
 
-    const virtualEmail = `${username}@motephon.ne.jp`;
-    const authEmail = `${username}@motephon.app`;
+    const virtualEmail = `${username}@modephon.ne.jp`;
+    const authEmail = `${username}@modephon.app`;
     // Supabase Authは6文字以上必要なので、パスワードをパディング
     const authPassword = `mp${password}xx`;
     // ネットワーク/接続エラーかどうか判定するヘルパー
@@ -753,10 +760,10 @@ export default function PhoneApp() {
     if (!body.trim()) { setActionToast("本文を入力してね!"); setTimeout(() => setActionToast(null), 2000); setComposeSending(false); return; }
     setComposeSending(true);
 
-    const receiverEmail = to.includes("@") ? to : `${to}@motephon.ne.jp`;
+    const receiverEmail = to.includes("@") ? to : `${to}@modephon.ne.jp`;
     const newMsg: Message = {
       id: `sent-${Date.now()}`,
-      sender_email: user?.virtual_email || "user@motephon.ne.jp",
+      sender_email: user?.virtual_email || "user@modephon.ne.jp",
       receiver_email: receiverEmail,
       subject: subject || "(ﾅｼ)",
       body: body,
@@ -789,7 +796,7 @@ export default function PhoneApp() {
         const fallbackReply = isGyaru
           ? `ぇ～ﾏﾁﾞで!?\nｳｹﾙんだけどww\n\nまたﾒｰﾙしてねぇ♪\n(^_^)v☆`
           : `ﾏﾁﾞかょ～!!\nｳｹﾙww\n\nまたﾒｰﾙ\nしてこいよ～!\n('-'*)`;
-        latencyQueue.enqueueWithDelay({ id: `npc-fallback-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: fallbackReply, is_read: false, created_at: new Date().toISOString() }, 600000);
+        latencyQueue.enqueueWithDelay({ id: `npc-fallback-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: fallbackReply, is_read: false, created_at: new Date().toISOString() }, 180000);
       }
     }
     setComposeSending(false);
@@ -976,13 +983,17 @@ export default function PhoneApp() {
       case "infraredSend": return renderInfraredSendScreen();
       case "infraredReceive": return renderInfraredReceiveScreen();
       case "profileEdit": return renderProfileEditScreen();
+      case "photoView": return renderPhotoViewScreen();
+      case "terms": return renderTermsScreen();
+      case "confirmLogout": return renderConfirmLogoutScreen();
+      case "confirmDelete": return renderConfirmDeleteScreen();
       default: return null;
     }
   };
 
   const renderRegisterScreen = () => (
     <div className="auth-screen screen-enter">
-      <div className="title">motephon</div>
+      <div className="title">modephon</div>
       <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 8 }}>写ﾒｰﾙ ﾈｯﾄﾜｰｸ</div>
       <div style={{ fontSize: "10px", width: "100%", textAlign: "left", marginBottom: 4 }}>
         {regStep === "email" ? "📱 ﾏｲ番号を決めよう" : "🔒 ﾊﾟｽﾜｰﾄﾞを決めよう"}
@@ -999,7 +1010,7 @@ export default function PhoneApp() {
             {regField === "email" && <span className="cursor-blink" />}
           </div>
           <div className="domain" style={{ width: "100%", textAlign: "right", fontSize: "10px", opacity: 0.5 }}>
-            @motephon.ne.jp
+            @modephon.ne.jp
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: "4px", marginTop: 2 }}>
             {[0,1,2,3].map(i => (
@@ -1057,7 +1068,7 @@ export default function PhoneApp() {
         )}
         <div className="idle-clock" style={{ fontSize: `${28 * fontScale}px` }}>{clock}</div>
         <div className="idle-date" style={{ fontSize: `${10 * fontScale}px` }}>{dateStr}</div>
-        <div className="idle-carrier" style={{ fontSize: `${8 * fontScale}px` }}>motephon</div>
+        <div className="idle-carrier" style={{ fontSize: `${8 * fontScale}px` }}>modephon</div>
         {unreadCount > 0 && (
           <div className="idle-notification" style={{ fontSize: `${10 * fontScale}px` }}>
             <span className="envelope-icon">✉</span> 新着ﾒｰﾙ {unreadCount}件
@@ -1218,6 +1229,9 @@ export default function PhoneApp() {
       { label: "文字ｻｲｽﾞ", value: fontSize, icon: "🔤" },
       { label: "画面の明るさ", value: "▮".repeat(brightness) + "▯".repeat(5 - brightness), icon: "☀" },
       { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
+      { label: "利用規約", value: "▶", icon: "📄" },
+      { label: "ﾛｸﾞｱｳﾄ", value: "▶", icon: "🚪" },
+      { label: "ｱｶｳﾝﾄ削除", value: "▶", icon: "⚠" },
       { label: "ﾊﾞｰｼﾞｮﾝ", value: `v${APP_VERSION}`, icon: "ℹ" },
     ];
     return (
@@ -1326,7 +1340,7 @@ export default function PhoneApp() {
           <div style={{ padding: 24, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>写真はまだありません📷\nｶﾒﾗで撮影してね</div>
         ) : photoGallery.map((photo, i) => (
           <div key={photo.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
-            onClick={() => setSelectedIndex(i)}>
+            onClick={() => { setSelectedIndex(i); if (photo.dataUrl) { pushScreen("photoView"); } }}>
             <div className="icon" style={{ width: 28, height: 21, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", border: "1px solid rgba(0,0,0,0.1)", borderRadius: 1, background: "#1a2a1a" }}>\r
               {photo.dataUrl ? <img src={photo.dataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", imageRendering: "pixelated" }} /> : <span style={{ fontSize: "14px" }}>🖼</span>}\r
             </div>
@@ -1660,7 +1674,7 @@ export default function PhoneApp() {
           {[
             { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
             { label: "端末名", value: "J-SH51", icon: "📱" },
-            { label: "ｷｬﾘｱ", value: "motephon (J-ﾌｫﾝ)", icon: "📡" },
+            { label: "ｷｬﾘｱ", value: "modephon (J-ﾌｫﾝ)", icon: "📡" },
             { label: "ﾒﾓﾘ", value: "1MB内蔵 + SDｶｰﾄﾞ", icon: "💾" },
             { label: "ｶﾒﾗ", value: "0.3MP CMOS (VGA)", icon: "📷" },
             { label: "液晶", value: colorMode ? "65536色 TFT" : "ﾓﾉｸﾛ STN", icon: "🖥" },
@@ -1731,6 +1745,138 @@ export default function PhoneApp() {
         >
           <div className="icon">💾</div>
           <div className="label" style={{ fontSize: "11px" }}>保存する</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ========== PHOTO VIEW SCREEN ==========
+  const renderPhotoViewScreen = () => {
+    const photo = photoGallery[selectedIndex];
+    if (!photo) return null;
+    return (
+      <div className="screen-enter">
+        <div className="screen-title">🖼 {photo.label}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: 8, gap: 6 }}>
+          <div style={{ width: "90%", aspectRatio: "4/3", background: "#0a0a0a", border: "2px solid #444", borderRadius: 2, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {photo.dataUrl ? (
+              <img src={photo.dataUrl} alt={photo.label} style={{ width: "100%", height: "100%", objectFit: "contain", imageRendering: "pixelated" }} />
+            ) : (
+              <div style={{ fontSize: "32px" }}>🖼</div>
+            )}
+          </div>
+          <div style={{ fontSize: "9px", opacity: 0.6, textAlign: "center" }}>
+            {photo.timestamp}<br/>
+            120×90px / {photo.dataUrl ? `${Math.round(photo.dataUrl.length * 0.75 / 1024)}KB` : "約15KB"}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ========== TERMS SCREEN ==========
+  const renderTermsScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📄 利用規約</div>
+      <div className="viewport-scroll" style={{ padding: 8 }}>
+        <div style={{ fontSize: "11px", fontWeight: "bold", textAlign: "center", marginBottom: 8, borderBottom: "1px dashed rgba(0,0,0,0.2)", paddingBottom: 6 }}>
+          modephon 利用規約
+        </div>
+        {["1. 本サービスはガラケー体験シミュレーターです。実際の通信機能はありません。",
+          "2. ユーザーは4ケタの番号でアカウントを作成します。",
+          "3. メール内容はAIキャラクターとの交流に使用されます。",
+          "4. 撮影した写真は端末内に保存されます。",
+          "5. サービスは予告なく変更・終了する場合があります。",
+        ].map((t, i) => (
+          <div key={i} style={{ fontSize: "9px", padding: "3px 0", borderBottom: "1px dotted rgba(0,0,0,0.08)" }}>{t}</div>
+        ))}
+
+        <div style={{ fontSize: "11px", fontWeight: "bold", textAlign: "center", margin: "12px 0 8px", borderBottom: "1px dashed rgba(0,0,0,0.2)", paddingBottom: 6 }}>
+          ﾌﾟﾗｲﾊﾞｼｰﾎﾟﾘｼｰ
+        </div>
+        {["1. 取得する情報: メールアドレス(仮想)、表示名、メール内容",
+          "2. 利用目的: サービスの提供・改善",
+          "3. 第三者提供: 行いません",
+          "4. データ削除: 設定からアカウント削除で全データが削除されます",
+        ].map((t, i) => (
+          <div key={i} style={{ fontSize: "9px", padding: "3px 0", borderBottom: "1px dotted rgba(0,0,0,0.08)" }}>{t}</div>
+        ))}
+
+        <div style={{ marginTop: 12, padding: "8px", background: "rgba(0,0,0,0.04)", borderRadius: 2, fontSize: "9px", textAlign: "center" }}>
+          <div style={{ fontWeight: "bold", marginBottom: 4 }}>運営会社</div>
+          <div>株式会社ヒトコト</div>
+          <div style={{ opacity: 0.6, marginTop: 2 }}>y.kominami@hitokoto1.co.jp</div>
+          <div style={{ opacity: 0.6 }}>小南優作</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ========== CONFIRM LOGOUT SCREEN ==========
+  const renderConfirmLogoutScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">🚪 ﾛｸﾞｱｳﾄ</div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, flex: 1, justifyContent: "center" }}>
+        <div style={{ fontSize: "10px", textAlign: "center", lineHeight: 1.6 }}>
+          ﾛｸﾞｱｳﾄしますか？<br/>
+          <span style={{ fontSize: "8px", opacity: 0.5 }}>※設定や写真は端末に残ります</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <div className="menu-item selected" style={{ flex: 1, justifyContent: "center", padding: "8px 0" }}
+            onClick={async () => {
+              await supabase.auth.signOut();
+              setUser(null);
+              setMessages(DEMO_MESSAGES);
+              setSentMessages([]);
+              setScreen("register");
+              setScreenStack([]);
+            }}>
+            <div className="icon">✅</div>
+            <div className="label" style={{ fontSize: "10px" }}>はい</div>
+          </div>
+          <div className="menu-item" style={{ flex: 1, justifyContent: "center", padding: "8px 0" }}
+            onClick={() => popScreen()}>
+            <div className="icon">❌</div>
+            <div className="label" style={{ fontSize: "10px" }}>いいえ</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ========== CONFIRM DELETE SCREEN ==========
+  const renderConfirmDeleteScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">⚠ ｱｶｳﾝﾄ削除</div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, flex: 1, justifyContent: "center" }}>
+        <div style={{ fontSize: "10px", textAlign: "center", lineHeight: 1.6, color: colorMode ? "#c33" : "inherit" }}>
+          ⚠ 削除すると元に戻せません<br/>
+          <span style={{ fontSize: "8px", opacity: 0.6 }}>メール・写真・設定が全て削除されます</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <div className="menu-item" style={{ flex: 1, justifyContent: "center", padding: "8px 0", background: colorMode ? "rgba(200,50,50,0.1)" : "rgba(0,0,0,0.05)" }}
+            onClick={async () => {
+              try {
+                localStorage.clear();
+                await supabase.auth.signOut();
+              } catch {}
+              setUser(null);
+              setMessages(DEMO_MESSAGES);
+              setSentMessages([]);
+              setPhotoGallery([]);
+              setScreen("register");
+              setScreenStack([]);
+              setActionToast("削除しました");
+              setTimeout(() => setActionToast(null), 2000);
+            }}>
+            <div className="icon">🗑</div>
+            <div className="label" style={{ fontSize: "10px" }}>削除する</div>
+          </div>
+          <div className="menu-item selected" style={{ flex: 1, justifyContent: "center", padding: "8px 0" }}
+            onClick={() => popScreen()}>
+            <div className="icon">❌</div>
+            <div className="label" style={{ fontSize: "10px" }}>やめる</div>
+          </div>
         </div>
       </div>
     </div>
@@ -2146,7 +2292,7 @@ export default function PhoneApp() {
             <div className="status-bar">
               <div className="left">
                 <div className="antenna"><div className="bar" /><div className="bar" /><div className="bar" /></div>
-                <span style={{ fontSize: "8px" }}>motephon</span>
+                <span style={{ fontSize: "8px" }}>modephon</span>
               </div>
               <div className="center">{clock}</div>
               <div className="right">

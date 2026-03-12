@@ -1,4 +1,4 @@
-const CACHE_NAME = 'motephon-v3';
+﻿const CACHE_NAME = 'modephon-v3';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',

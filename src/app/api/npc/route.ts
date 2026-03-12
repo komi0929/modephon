@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // 10分後に配信されるようにDB直接INSERT（deliver_at付き）
     const admin = getAdminClient();
     if (admin && senderEmail) {
-      const delayMs = 600000; // 10分
+      const delayMs = 180000; // 3分
       const jitter = delayMs * 0.2;
       const actualDelay = delayMs - jitter + Math.random() * jitter * 2;
       const deliverAt = new Date(Date.now() + actualDelay).toISOString();

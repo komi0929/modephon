@@ -1,8 +1,8 @@
-import type { Metadata, Viewport } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "motephon - 写ﾒｰﾙ体験",
+  title: "modephon - 写ﾒｰﾙ体験",
   description:
     "2000年代初頭の写メール体験を完全再現したP2Pメッセージングアプリ",
   manifest: "/manifest.json",
@@ -13,10 +13,10 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "motephon",
+    title: "modephon",
   },
   openGraph: {
-    title: "motephon",
+    title: "modephon",
     description: "レトロ携帯写メール体験",
     type: "website",
   },

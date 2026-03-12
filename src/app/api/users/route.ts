@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export async function GET(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q") || "";
 
   // 4桁数字検索 → virtual_email部分一致
-  const searchEmail = query ? `${query}@motephon.ne.jp` : "";
+  const searchEmail = query ? `${query}@modephon.ne.jp` : "";
 
   if (searchEmail) {
     // 完全一致検索
