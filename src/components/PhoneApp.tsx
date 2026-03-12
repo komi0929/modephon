@@ -408,13 +408,20 @@ export default function PhoneApp() {
     const authEmail = `${username}@motephon.app`;
     // Supabase Authは6文字以上必要なので、パスワードをパディング
     const authPassword = `mp${password}xx`;
+    // ネットワーク/接続エラーかどうか判定するヘルパー
+    const isNetworkError = (msg: string) =>
+      ["placeholder", "fetch", "load failed", "Failed to fetch", "NetworkError", "network", "CORS", "ERR_"].some(
+        (k) => msg.toLowerCase().includes(k.toLowerCase())
+      );
+
     try {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (error) {
-          if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
+          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, username); return; }
           if (error.message.includes("Invalid login")) { setRegError("番号が違うょ…"); return; }
-          setRegError(error.message); return;
+          // その他の認証エラーもデモモードへ
+          enterDemoMode(virtualEmail, username); return;
         }
         if (data.user) {
           const { data: profile } = await supabase.from("users").select("*").eq("id", data.user.id).single();
@@ -426,9 +433,10 @@ export default function PhoneApp() {
       } else {
         const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
         if (error) {
-          if (error.message.includes("placeholder") || error.message.includes("fetch")) { enterDemoMode(virtualEmail, username); return; }
+          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, username); return; }
           if (error.message.includes("already registered")) { setRegError("もう登録してあるょ！\nﾛｸﾞｲﾝに切替えてね"); setIsLogin(true); return; }
-          setRegError(error.message); return;
+          // その他のエラーもデモモードへ
+          enterDemoMode(virtualEmail, username); return;
         }
         if (data.user) {
           await supabase.from("users").insert({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
