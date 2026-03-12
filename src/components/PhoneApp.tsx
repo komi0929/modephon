@@ -47,7 +47,8 @@ type Screen =
   | "profile"
   | "userSearch"
   | "infraredSend"
-  | "infraredReceive";
+  | "infraredReceive"
+  | "profileEdit";
 
 interface Message {
   id: string;
@@ -143,6 +144,9 @@ export default function PhoneApp() {
   const [irLoading, setIrLoading] = useState(false);
   const irTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 名前編集 state
+  const [editingName, setEditingName] = useState("");
+
   // Compose state
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -184,6 +188,7 @@ export default function PhoneApp() {
     if (screen === "compose" && composeField !== "none") return true;
     if (screen === "userSearch") return true;
     if (screen === "infraredReceive") return true;
+    if (screen === "profileEdit") return true;
     return false;
   }, [screen, composeField]);
 
@@ -234,6 +239,8 @@ export default function PhoneApp() {
       setSearchQuery((prev) => prev + text);
     } else if (screen === "infraredReceive") {
       setIrInputCode((prev) => prev + text);
+    } else if (screen === "profileEdit") {
+      setEditingName((prev) => prev + text);
     }
     setToggleState(createInitialState());
   }, [toggleState, screen, regField, composeField]);
@@ -285,6 +292,8 @@ export default function PhoneApp() {
         setSearchQuery((p) => p.slice(0, -1));
       } else if (screen === "infraredReceive") {
         setIrInputCode((p) => p.slice(0, -1));
+      } else if (screen === "profileEdit") {
+        setEditingName((p) => p.slice(0, -1));
       }
       return prev;
     });
@@ -756,6 +765,7 @@ export default function PhoneApp() {
       case "userSearch": return ["戻る", "検索", ""];
       case "infraredSend": return ["戻る", "", ""];
       case "infraredReceive": return ["戻る", "受信", ""];
+      case "profileEdit": return ["戻る", "保存", ""];
       default: return ["", "", ""];
     }
   }, [screen, composeField]);
@@ -830,6 +840,7 @@ export default function PhoneApp() {
       case "userSearch": return renderUserSearchScreen();
       case "infraredSend": return renderInfraredSendScreen();
       case "infraredReceive": return renderInfraredReceiveScreen();
+      case "profileEdit": return renderProfileEditScreen();
       default: return null;
     }
   };
@@ -1389,7 +1400,17 @@ export default function PhoneApp() {
         <div className="viewport-scroll" style={{ padding: 8 }}>
           <div style={{ textAlign: "center", marginBottom: 8 }}>
             <div style={{ fontSize: "32px", marginBottom: 2 }}>👤</div>
-            <div style={{ fontSize: "13px", fontWeight: "bold" }}>{user?.display_name || "--"}</div>
+            <div
+              style={{ fontSize: "13px", fontWeight: "bold", cursor: "pointer", textDecoration: "underline dotted", textDecorationColor: "rgba(0,0,0,0.2)" }}
+              onClick={() => {
+                setEditingName(user?.display_name || "");
+                setToggleState(createInitialState("", "hiragana"));
+                pushScreen("profileEdit");
+              }}
+            >
+              {user?.display_name || "--"} ✏️
+            </div>
+            <div style={{ fontSize: "7px", opacity: 0.4, marginTop: 2 }}>タップで名前変更</div>
           </div>
           {[
             { label: "ﾏｲｱﾄﾞﾚｽ", value: user?.virtual_email || "--", icon: "📧" },
@@ -1414,6 +1435,61 @@ export default function PhoneApp() {
       </div>
     );
   };
+
+  // ========== PROFILE EDIT (NAME) SCREEN ==========
+  const handleSaveName = useCallback(async () => {
+    let name = editingName;
+    if (toggleState.text) {
+      name += toggleState.text;
+      setEditingName(name);
+      setToggleState(createInitialState());
+    }
+    if (!name.trim()) return;
+    // Update local state
+    setUser(prev => prev ? { ...prev, display_name: name } : prev);
+    // Update DB
+    try {
+      if (user?.id && user.id !== "demo-user") {
+        await supabase.from("users").update({ display_name: name }).eq("id", user.id);
+      }
+    } catch {}
+    popScreen();
+  }, [editingName, toggleState, user, supabase, popScreen]);
+
+  const renderProfileEditScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">✏️ 名前変更</div>
+      <div style={{ padding: 12 }}>
+        <div style={{ fontSize: "10px", opacity: 0.7, marginBottom: 8, textAlign: "center" }}>
+          相手に表示される名前を入力してね
+        </div>
+        <div style={{
+          background: "rgba(0,0,0,0.05)",
+          padding: "8px",
+          borderRadius: 2,
+          fontSize: "16px",
+          textAlign: "center",
+          marginBottom: 8,
+          border: "1px solid rgba(0,0,0,0.1)",
+          minHeight: 30,
+        }}>
+          {getFieldDisplay(editingName, "profileEdit")}
+          <span className="cursor-blink" />
+        </div>
+        <div style={{ fontSize: "8px", opacity: 0.4, textAlign: "center", marginBottom: 12 }}>
+          ※キーで入力 → 決定で保存
+        </div>
+        <div
+          className="menu-item selected"
+          style={{ justifyContent: "center", padding: "6px 0" }}
+          onClick={handleSaveName}
+        >
+          <div className="icon">💾</div>
+          <div className="label" style={{ fontSize: "11px" }}>保存する</div>
+        </div>
+      </div>
+    </div>
+  );
 
   // ========== USER SEARCH SCREEN ==========
   const handleUserSearch = useCallback(async () => {
