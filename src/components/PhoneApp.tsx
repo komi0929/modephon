@@ -22,6 +22,7 @@ import {
   getCurrentCandidates,
   KEY_LABELS,
 } from "@/lib/toggleInput";
+import { savePhotos, loadPhotos, type StoredPhoto } from "@/lib/indexedDB";
 
 /* =========================================
    Types
@@ -145,6 +146,12 @@ export default function PhoneApp() {
   const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string; dataUrl?: string}[]>(() => {
     try { const saved = localStorage.getItem("mp_photos"); return saved ? JSON.parse(saved) : []; } catch { return []; }
   });
+  // IndexedDB からも読み込み（ITP対策）
+  useEffect(() => {
+    loadPhotos().then((photos) => {
+      if (photos.length > 0) setPhotoGallery((prev) => prev.length > 0 ? prev : photos as typeof prev);
+    }).catch(() => {});
+  }, []);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraCaptureRef = useRef<HTMLCanvasElement>(null);
@@ -173,6 +180,7 @@ export default function PhoneApp() {
 
   // 名前編集 state
   const [editingName, setEditingName] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
 
   // Compose state
   const [composeTo, setComposeTo] = useState("");
@@ -225,8 +233,10 @@ export default function PhoneApp() {
   useEffect(() => { try { localStorage.setItem("mp_wallpaper", wallpaper); } catch {} }, [wallpaper]);
   useEffect(() => { try { localStorage.setItem("mp_fontsize", fontSize); } catch {} }, [fontSize]);
   useEffect(() => { try { localStorage.setItem("mp_brightness", String(brightness)); } catch {} }, [brightness]);
-  // Photo gallery persistence (save up to 20 photos)
-  useEffect(() => { try { const toSave = photoGallery.slice(0, 20); localStorage.setItem("mp_photos", JSON.stringify(toSave)); } catch {} }, [photoGallery]);
+  // Photo gallery persistence (localStorage + IndexedDB for ITP resistance)
+  useEffect(() => {
+    try { const toSave = photoGallery.slice(0, 20); localStorage.setItem("mp_photos", JSON.stringify(toSave)); savePhotos(toSave.filter((p): p is StoredPhoto => !!p.dataUrl) as StoredPhoto[]).catch(() => {}); } catch {}
+  }, [photoGallery]);
 
   // --- Clock ---
   useEffect(() => {
@@ -310,6 +320,18 @@ export default function PhoneApp() {
         "0": () => pushScreen("mainMenu"),
       };
       if (shortcutMap[key]) { shortcutMap[key](); return; }
+    }
+    // confirmDelete画面: テンキーでパスワード入力
+    if (screen === "confirmDelete") {
+      vibrate(8);
+      if (/^\d$/.test(key) && deletePassword.length < 4) {
+        setDeletePassword((prev) => prev + key);
+      } else if (key === "*") {
+        setDeletePassword("");
+      } else if (key === "#") {
+        setDeletePassword((prev) => prev.slice(0, -1));
+      }
+      return;
     }
     if (!isInputActive) return;
     vibrate(8);
@@ -1848,32 +1870,36 @@ export default function PhoneApp() {
   const renderConfirmDeleteScreen = () => (
     <div className="screen-enter">
       <div className="screen-title">⚠ ｱｶｳﾝﾄ削除</div>
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, flex: 1, justifyContent: "center" }}>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, flex: 1, justifyContent: "center" }}>
         <div style={{ fontSize: "10px", textAlign: "center", lineHeight: 1.6, color: colorMode ? "#c33" : "inherit" }}>
           ⚠ 削除すると元に戻せません<br/>
           <span style={{ fontSize: "8px", opacity: 0.6 }}>メール・写真・設定が全て削除されます</span>
         </div>
-        <div style={{ display: "flex", gap: 8, width: "100%" }}>
-          <div className="menu-item" style={{ flex: 1, justifyContent: "center", padding: "8px 0", background: colorMode ? "rgba(200,50,50,0.1)" : "rgba(0,0,0,0.05)" }}
+        <div style={{ fontSize: "9px", opacity: 0.7, textAlign: "center" }}>確認のため暫証番号(4ケタ)を入力:</div>
+        <div style={{ background: "rgba(0,0,0,0.06)", padding: "6px 12px", borderRadius: 2, fontSize: "18px", letterSpacing: 6, textAlign: "center", minWidth: 80, border: "1px solid rgba(0,0,0,0.1)" }}>
+          {"●".repeat(deletePassword.length) || "____"}
+        </div>
+        <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 4 }}>
+          <div className="menu-item" style={{ flex: 1, justifyContent: "center", padding: "8px 0", background: colorMode ? "rgba(200,50,50,0.1)" : "rgba(0,0,0,0.05)", opacity: deletePassword.length === 4 ? 1 : 0.4 }}
             onClick={async () => {
+              if (deletePassword.length !== 4) { setActionToast("4ケタ入力してね"); setTimeout(() => setActionToast(null), 2000); return; }
               try {
+                const email = user?.virtual_email?.replace("@modephon.ne.jp", "") || "";
+                const authEmail = `${email}@modephon.app`;
+                const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: deletePassword });
+                if (error) { setActionToast("暫証番号が違います"); setTimeout(() => setActionToast(null), 2000); setDeletePassword(""); return; }
                 localStorage.clear();
                 await supabase.auth.signOut();
-              } catch {}
-              setUser(null);
-              setMessages(DEMO_MESSAGES);
-              setSentMessages([]);
-              setPhotoGallery([]);
-              setScreen("register");
-              setScreenStack([]);
-              setActionToast("削除しました");
-              setTimeout(() => setActionToast(null), 2000);
+              } catch { setActionToast("エラーが発生しました"); setTimeout(() => setActionToast(null), 2000); return; }
+              setUser(null); setMessages(DEMO_MESSAGES); setSentMessages([]); setPhotoGallery([]);
+              setScreen("register"); setScreenStack([]); setDeletePassword("");
+              setActionToast("削除しました"); setTimeout(() => setActionToast(null), 2000);
             }}>
             <div className="icon">🗑</div>
             <div className="label" style={{ fontSize: "10px" }}>削除する</div>
           </div>
           <div className="menu-item selected" style={{ flex: 1, justifyContent: "center", padding: "8px 0" }}
-            onClick={() => popScreen()}>
+            onClick={() => { popScreen(); setDeletePassword(""); }}>
             <div className="icon">❌</div>
             <div className="label" style={{ fontSize: "10px" }}>やめる</div>
           </div>
@@ -2307,9 +2333,9 @@ export default function PhoneApp() {
 
             {/* Soft Key Bar */}
             <div className="softkey-bar">
-              <div className="key" onClick={handleSoftKeyLeft}>{softKeys[0]}</div>
-              <div className="key center" onClick={handleSelect}>{softKeys[1]}</div>
-              <div className="key" onClick={handleSoftKeyRight}>{softKeys[2]}</div>
+              <div className="key" onClick={handleSoftKeyLeft} role="button" aria-label="左ソフトキー">{softKeys[0]}</div>
+              <div className="key center" onClick={handleSelect} role="button" aria-label="決定">{softKeys[1]}</div>
+              <div className="key" onClick={handleSoftKeyRight} role="button" aria-label="右ソフトキー">{softKeys[2]}</div>
             </div>
           </div>
         </div>
@@ -2351,20 +2377,20 @@ export default function PhoneApp() {
 
         {/* 上段: ソフトキー + D-pad */}
         <div className="keypad-top">
-          <button className="soft-btn" onClick={handleSoftKeyLeft}>
+          <button className="soft-btn" onClick={handleSoftKeyLeft} aria-label="左ソフトキー">
             {softKeys[0] || "◁"}
           </button>
 
           <div className="dpad-container">
             <div className="dpad-ring" />
-            <button className="dpad-btn up" onClick={handleDpadUp}>▲</button>
-            <button className="dpad-btn down" onClick={handleDpadDown}>▼</button>
-            <button className="dpad-btn left" onClick={handleDpadLeft}>◀</button>
-            <button className="dpad-btn right" onClick={handleDpadRight}>▶</button>
-            <button className="dpad-center" onClick={handleSelect}>OK</button>
+            <button className="dpad-btn up" onClick={handleDpadUp} aria-label="上">▲</button>
+            <button className="dpad-btn down" onClick={handleDpadDown} aria-label="下">▼</button>
+            <button className="dpad-btn left" onClick={handleDpadLeft} aria-label="左">◀</button>
+            <button className="dpad-btn right" onClick={handleDpadRight} aria-label="右">▶</button>
+            <button className="dpad-center" onClick={handleSelect} aria-label="決定">OK</button>
           </div>
 
-          <button className="soft-btn" onClick={handleSoftKeyRight}>
+          <button className="soft-btn" onClick={handleSoftKeyRight} aria-label="右ソフトキー">
             {softKeys[2] || "▷"}
           </button>
         </div>
@@ -2376,6 +2402,7 @@ export default function PhoneApp() {
               key={key}
               className="num-key"
               onClick={() => handleNumpadKey(key)}
+              aria-label={`キー${key}: ${label}`}
             >
               <span className="key-num">{isInputActive ? label : key}</span>
               <span className="key-chars">{isInputActive ? sub : ""}</span>

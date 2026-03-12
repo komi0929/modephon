@@ -1,4 +1,4 @@
-﻿import type { Metadata, Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,6 +19,14 @@ export const metadata: Metadata = {
     title: "modephon",
     description: "レトロ携帯写メール体験",
     type: "website",
+    url: "https://modephon.vercel.app",
+    images: [{ url: "/ogp.png", width: 1200, height: 630, alt: "modephon - 写メール体験" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "modephon",
+    description: "2000年代初頭の写メール体験を完全再現",
+    images: ["/ogp.png"],
   },
 };
 
