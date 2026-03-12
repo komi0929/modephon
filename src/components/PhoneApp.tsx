@@ -44,7 +44,8 @@ type Screen =
   | "internetPage"
   | "dataFolder"
   | "dataFolderSub"
-  | "profile";
+  | "profile"
+  | "userSearch";
 
 interface Message {
   id: string;
@@ -127,6 +128,11 @@ export default function PhoneApp() {
   // Data folder sub
   const [dataFolderCategory, setDataFolderCategory] = useState("");
 
+  // User search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{virtual_email: string; display_name: string; is_npc: boolean}[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
   // Compose state
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -166,6 +172,7 @@ export default function PhoneApp() {
   const isInputActive = useMemo(() => {
     if (screen === "register") return true;
     if (screen === "compose" && composeField !== "none") return true;
+    if (screen === "userSearch") return true;
     return false;
   }, [screen, composeField]);
 
@@ -212,6 +219,8 @@ export default function PhoneApp() {
         case "subject": setComposeSubject((prev) => prev + text); break;
         case "body": setComposeBody((prev) => prev + text); break;
       }
+    } else if (screen === "userSearch") {
+      setSearchQuery((prev) => prev + text);
     }
     setToggleState(createInitialState());
   }, [toggleState, screen, regField, composeField]);
@@ -259,6 +268,8 @@ export default function PhoneApp() {
           case "subject": setComposeSubject((p) => p.slice(0, -1)); break;
           case "body": setComposeBody((p) => p.slice(0, -1)); break;
         }
+      } else if (screen === "userSearch") {
+        setSearchQuery((p) => p.slice(0, -1));
       }
       return prev;
     });
@@ -503,6 +514,15 @@ export default function PhoneApp() {
     return () => { supabase.removeChannel(channel); };
   }, [user, supabase]);
 
+  // --- Poll for delayed messages (NPC返信の取得) ---
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      loadMessages(user.virtual_email);
+    }, 30000); // 30秒ごとにポーリング
+    return () => clearInterval(interval);
+  }, [user, loadMessages]);
+
   // --- Register (4桁数字) ---
   const handleRegister = useCallback(async () => {
     let username = regUsername;
@@ -624,39 +644,61 @@ export default function PhoneApp() {
     const npc = ALL_NPCS.find((n) => n.email === receiverEmail);
     if (npc) {
       try {
-        const res = await fetch("/api/npc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ npcEmail: npc.email, userMessage: body }) });
-        if (res.ok) {
-          const data = await res.json();
-          latencyQueue.enqueueWithDelay({ id: `npc-reply-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: data.reply, is_read: false, created_at: new Date().toISOString() }, 600000);
-        } else { generateFallbackNpcReply(npc.email, newMsg); }
-      } catch { generateFallbackNpcReply(npc.email, newMsg); }
+        // サーバーサイドでDB直接INSERT（deliver_at付き）→ リロードしても消えない
+        await fetch("/api/npc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            npcEmail: npc.email,
+            userMessage: body,
+            senderEmail: user?.virtual_email || "",
+          }),
+        });
+        // 返信は30秒ポーリングで自動取得される
+      } catch {
+        // オフライン/エラー時のみローカルフォールバック
+        const isGyaru = npc.email === NPC_GYARU.email;
+        const fallbackReply = isGyaru
+          ? `ぇ～ﾏﾁﾞで!?\nｳｹﾙんだけどww\n\nまたﾒｰﾙしてねぇ♪\n(^_^)v☆`
+          : `ﾏﾁﾞかょ～!!\nｳｹﾙww\n\nまたﾒｰﾙ\nしてこいよ～!\n('-'*)`;
+        latencyQueue.enqueueWithDelay({ id: `npc-fallback-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: fallbackReply, is_read: false, created_at: new Date().toISOString() }, 600000);
+      }
     }
     setComposeSending(false);
     popScreen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composeTo, composeSubject, composeBody, composeImage, composeImagePreviewUrl, composeField, toggleState, user, supabase, latencyQueue, popScreen]);
 
-  const generateFallbackNpcReply = useCallback((npcEmail: string, originalMsg: Message) => {
-    const isGyaru = npcEmail === NPC_GYARU.email;
-    const replies = isGyaru
-      ? [`ぇ～ﾏﾁﾞで!?\nｳｹﾙんだけどww\n\nまたﾒｰﾙしてねぇ♪\n(^_^)v☆`, `ぉ返事ありがとぉ!!\nﾁｮｰ嬉しぃ～\n(≧∇≦)\n\nぁたしも写メ\n撮ったょ～♪♪`, `ﾏﾁﾞﾏﾁﾞ!?\nそれﾔﾊﾞｲんだけど!!\nwww\n\n今度ﾌﾟﾘ撮ろ～\n(*^o^*)`]
-      : [`ﾏﾁﾞかょ～!!\nｳｹﾙww\n\nまたﾒｰﾙ\nしてこいよ～!\n('-'*)`, `ｵｯｽ!!\n返事ﾄﾞｰﾓ!!\n\n今ﾊﾟﾗﾊﾟﾗの\n練習中だし!!\n(笑)`, `ﾁｮｰ最高じゃね!?\nwww\n\n今度ｾﾝﾀｰ街\n行こうぜ～!!\n(\`・ω・´)`];
-    const reply = replies[Math.floor(Math.random() * replies.length)];
-    latencyQueue.enqueueWithDelay({ id: `npc-fallback-${Date.now()}`, sender_email: npcEmail, receiver_email: user?.virtual_email || "", subject: `Re: ${originalMsg.subject}`, body: reply, is_read: false, created_at: new Date().toISOString() }, 600000);
-  }, [latencyQueue, user]);
-
-  // --- Image attachment ---
+  // --- Image attachment (ガラケーサイズに圧縮) ---
   const handleImageAttach = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setComposeImage(file);
+    // 画像を120x90に圧縮してbase64化（ガラケーの写メールサイズ）
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const maxW = 120, maxH = 90;
+      let w = img.width, h = img.height;
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressedUrl = canvas.toDataURL("image/jpeg", 0.6);
+        setComposeImagePreviewUrl(compressedUrl);
+        if (imageCanvasRef.current) {
+          renderProgressiveImage(imageCanvasRef.current, compressedUrl, { maxWidth: 120, maxHeight: 90, sliceHeight: 2, delayMs: 30 });
+        }
+      }
+    };
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const url = ev.target?.result as string;
-      setComposeImagePreviewUrl(url);
-      if (imageCanvasRef.current) {
-        renderProgressiveImage(imageCanvasRef.current, url, { maxWidth: 120, maxHeight: 90, sliceHeight: 2, delayMs: 30 });
-      }
+      img.src = ev.target?.result as string;
     };
     reader.readAsDataURL(file);
   }, []);
@@ -696,6 +738,7 @@ export default function PhoneApp() {
       case "dataFolder": return ["戻る", "開く", ""];
       case "dataFolderSub": return ["戻る", "選択", ""];
       case "profile": return ["戻る", "", ""];
+      case "userSearch": return ["戻る", "検索", ""];
       default: return ["", "", ""];
     }
   }, [screen, composeField]);
@@ -767,6 +810,7 @@ export default function PhoneApp() {
       case "dataFolder": return renderDataScreen();
       case "dataFolderSub": return renderDataFolderSubScreen();
       case "profile": return renderProfileScreen();
+      case "userSearch": return renderUserSearchScreen();
       default: return null;
     }
   };
@@ -1319,7 +1363,91 @@ export default function PhoneApp() {
     );
   };
 
-  // ========== ADDRESS BOOK SCREEN ==========
+  // ========== USER SEARCH SCREEN ==========
+  const handleUserSearch = useCallback(async () => {
+    let q = searchQuery;
+    if (toggleState.text) {
+      q += toggleState.text;
+      setSearchQuery(q);
+      setToggleState(createInitialState("", "number"));
+    }
+    if (!q.trim()) return;
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`/api/users?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data.users || []);
+      }
+    } catch {} 
+    setSearchLoading(false);
+  }, [searchQuery, toggleState]);
+
+  const renderUserSearchScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">🔍 ﾕｰｻﾞｰ検索</div>
+      <div style={{ padding: 8 }}>
+        <div style={{ fontSize: "10px", marginBottom: 6, opacity: 0.7 }}>
+          相手の4ケタ番号を入力して検索
+        </div>
+        <div style={{
+          background: "rgba(0,0,0,0.05)",
+          padding: "6px 8px",
+          borderRadius: 2,
+          fontSize: "14px",
+          letterSpacing: 4,
+          textAlign: "center",
+          marginBottom: 8,
+          border: "1px solid rgba(0,0,0,0.1)",
+          minHeight: 24,
+        }}>
+          {getFieldDisplay(searchQuery, "search")}
+          <span className="cursor-blink" />
+        </div>
+        <div
+          className="menu-item selected"
+          style={{ justifyContent: "center", padding: "6px 0", marginBottom: 8 }}
+          onClick={handleUserSearch}
+        >
+          <div className="icon">🔍</div>
+          <div className="label" style={{ fontSize: "11px" }}>検索する</div>
+        </div>
+
+        {searchLoading && (
+          <div style={{ textAlign: "center", fontSize: "10px", opacity: 0.5, padding: 8 }}>
+            検索中...
+          </div>
+        )}
+        {!searchLoading && searchResults.length > 0 && (
+          <div>
+            <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 4 }}>検索結果:</div>
+            {searchResults.map((u, i) => (
+              <div key={u.virtual_email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+                onClick={() => {
+                  setComposeTo(u.virtual_email.split("@")[0]);
+                  setComposeSubject(""); setComposeBody("");
+                  setComposeImage(null); setComposeImagePreviewUrl(null);
+                  setComposeField("subject"); setToggleState(createInitialState());
+                  pushScreen("compose");
+                }}>
+                <div className="icon" style={{ fontSize: "16px" }}>👤</div>
+                <div className="label">
+                  <div style={{ fontSize: "11px", fontWeight: "bold" }}>{u.display_name || u.virtual_email.split("@")[0]}</div>
+                  <div style={{ fontSize: "8px", opacity: 0.5 }}>{u.virtual_email}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!searchLoading && searchQuery && searchResults.length === 0 && (
+          <div style={{ textAlign: "center", fontSize: "10px", opacity: 0.5, padding: 12 }}>
+            見つかりませんでした…
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const renderAddressBookScreen = () => (
     <div className="screen-enter">
       <div className="screen-title">📖 ｱﾄﾞﾚｽ帳 ({ALL_NPCS.length}件)</div>
@@ -1338,6 +1466,21 @@ export default function PhoneApp() {
             </div>
           </div>
         ))}
+        {/* ユーザー検索ボタン */}
+        <div className={`menu-item ${selectedIndex === ALL_NPCS.length ? "selected" : ""}`}
+          onClick={() => {
+            setSearchQuery("");
+            setSearchResults([]);
+            setToggleState(createInitialState("", "number"));
+            pushScreen("userSearch");
+          }}
+          style={{ borderTop: "1px dashed rgba(0,0,0,0.15)", marginTop: 6, paddingTop: 6 }}>
+          <div className="icon" style={{ fontSize: "16px" }}>🔍</div>
+          <div className="label">
+            <div style={{ fontSize: "11px", fontWeight: "bold" }}>ﾕｰｻﾞｰ検索</div>
+            <div style={{ fontSize: "8px", opacity: 0.5 }}>4ケタの番号で探せるよ</div>
+          </div>
+        </div>
       </div>
     </div>
   );
