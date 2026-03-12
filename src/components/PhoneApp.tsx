@@ -126,6 +126,13 @@ export default function PhoneApp() {
   const [melodyToast, setMelodyToast] = useState<string | null>(null);
   // Wallpaper DL animation state
   const [wpDownloading, setWpDownloading] = useState<string | null>(null);
+  // General toast for send/action feedback
+  const [actionToast, setActionToast] = useState<string | null>(null);
+
+  // --- Haptic feedback (ガラケーのボタン触感) ---
+  const vibrate = useCallback((ms: number = 10) => {
+    try { if (!mannerMode && navigator.vibrate) navigator.vibrate(ms); } catch {}
+  }, [mannerMode]);
 
   // Camera state
   const [cameraCountdown, setCameraCountdown] = useState(-1);
@@ -281,6 +288,7 @@ export default function PhoneApp() {
   // --- Handle numpad key press ---
   const handleNumpadKey = useCallback((key: string) => {
     if (!isInputActive) return;
+    vibrate(8);
 
     // Clear previous confirm timer
     if (confirmTimerRef.current) {
@@ -297,7 +305,7 @@ export default function PhoneApp() {
 
       return next;
     });
-  }, [isInputActive]);
+  }, [isInputActive, vibrate]);
 
   // --- Handle backspace ---
   const handleBackspace = useCallback(() => {
@@ -692,7 +700,8 @@ export default function PhoneApp() {
       setToggleState(createInitialState());
     }
 
-    if (!to.trim() || !body.trim()) return;
+    if (!to.trim()) { setActionToast("宛先を入力してね!"); setTimeout(() => setActionToast(null), 2000); setComposeSending(false); return; }
+    if (!body.trim()) { setActionToast("本文を入力してね!"); setTimeout(() => setActionToast(null), 2000); setComposeSending(false); return; }
     setComposeSending(true);
 
     const receiverEmail = to.includes("@") ? to : `${to}@motephon.ne.jp`;
@@ -735,6 +744,9 @@ export default function PhoneApp() {
       }
     }
     setComposeSending(false);
+    vibrate(30);
+    setActionToast("✉ 送信完了♪");
+    setTimeout(() => setActionToast(null), 2000);
     popScreen();
   }, [composeTo, composeSubject, composeBody, composeImage, composeImagePreviewUrl, composeField, toggleState, user, supabase, latencyQueue, popScreen]);
 
@@ -2050,6 +2062,12 @@ export default function PhoneApp() {
         {newMailNotification && (
           <div className="new-mail-popup">
             <span className="envelope-icon">✉</span><br />新着ﾒｰﾙ受信
+          </div>
+        )}
+        {/* Action toast (送信完了等) */}
+        {actionToast && (
+          <div className="new-mail-popup" style={{ background: "rgba(0,80,0,0.85)", color: "#9ce89c" }}>
+            {actionToast}
           </div>
         )}
       </div>
