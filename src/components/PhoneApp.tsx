@@ -453,6 +453,15 @@ export default function PhoneApp() {
         break;
       case "photoGallery":
         break;
+      case "userSearch":
+        handleUserSearch();
+        break;
+      case "infraredReceive":
+        handleInfraredReceive();
+        break;
+      case "profileEdit":
+        handleSaveName();
+        break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState, supabase]);
@@ -937,21 +946,32 @@ export default function PhoneApp() {
       "花畑": "linear-gradient(180deg, #87ceeb 0%, #98fb98 50%, #90ee90 100%)",
       "ｷﾗｷﾗ": "linear-gradient(135deg, #ff69b4 0%, #ff1493 25%, #da70d6 50%, #ba55d3 75%, #ff69b4 100%)",
     };
-    // グローバルのfontScale / brightnessOpacityを使用（ローカル重複削除済み）
-    const scale = fontScale;
+    // 壁紙ごとの装飾テキスト
+    const wallpaperDeco: Record<string, string> = {
+      "夜空☆": "☆  ✦    ★   ✧  ☆",
+      "海辺": "〜〜〜🌊〜〜〜",
+      "花畑": "🌷 🌼 🌸 🌺 🌻",
+      "ｷﾗｷﾗ": "✧ ✦ ♡ ✧ ♡ ✦ ✧",
+    };
 
     return (
       <div className="idle-screen screen-enter" style={{
         background: wallpaperBg[wallpaper] || wallpaperBg["標準"],
         opacity: brightnessOpacity,
       }}>
-        <div className="idle-clock" style={{ fontSize: `${28 * scale}px` }}>{clock}</div>
-        <div className="idle-date" style={{ fontSize: `${10 * scale}px` }}>{dateStr}</div>
-        <div className="idle-carrier" style={{ fontSize: `${8 * scale}px` }}>motephon</div>
+        {wallpaperDeco[wallpaper] && (
+          <div style={{ fontSize: `${8 * fontScale}px`, opacity: 0.3, letterSpacing: 2, marginBottom: 4 }}>{wallpaperDeco[wallpaper]}</div>
+        )}
+        <div className="idle-clock" style={{ fontSize: `${28 * fontScale}px` }}>{clock}</div>
+        <div className="idle-date" style={{ fontSize: `${10 * fontScale}px` }}>{dateStr}</div>
+        <div className="idle-carrier" style={{ fontSize: `${8 * fontScale}px` }}>motephon</div>
         {unreadCount > 0 && (
-          <div className="idle-notification" style={{ fontSize: `${10 * scale}px` }}>
+          <div className="idle-notification" style={{ fontSize: `${10 * fontScale}px` }}>
             <span className="envelope-icon">✉</span> 新着ﾒｰﾙ {unreadCount}件
           </div>
+        )}
+        {wallpaperDeco[wallpaper] && (
+          <div style={{ fontSize: `${8 * fontScale}px`, opacity: 0.2, letterSpacing: 2, marginTop: 8 }}>{wallpaperDeco[wallpaper]}</div>
         )}
       </div>
     );
@@ -1316,7 +1336,7 @@ export default function PhoneApp() {
       )},
       wallpapers: { title: "待受画像DL", content: (() => {
         const wpItems = [
-          { emoji: "🌸", name: "桡", wpKey: "標準" },
+          { emoji: "🌸", name: "桜", wpKey: "標準" },
           { emoji: "🌊", name: "海", wpKey: "海辺" },
           { emoji: "🌙", name: "月", wpKey: "夜空☆" },
           { emoji: "🐱", name: "猫", wpKey: "標準" },
@@ -1961,14 +1981,14 @@ export default function PhoneApp() {
                     setComposeField("subject"); setToggleState(createInitialState());
                     pushScreen("compose");
                   } else if (idx === 1) {
-                    // メール履歴: そのNPCとの受信/送信メッセージをフィルタして受信ボックスとして表示
+                    // メール履歴: そのNPCとのやりとりを個別メッセージとして表示
                     const historyMessages = [
                       ...messages.filter(m => m.sender_email === selectedContact.email),
                       ...sentMessages.filter(m => m.receiver_email === selectedContact.email),
                     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                     if (historyMessages.length > 0) {
-                      setMessages(historyMessages); // 一時的にフィルタ表示
-                      pushScreen("inbox");
+                      setSelectedMessage(historyMessages[0]);
+                      pushScreen("messageDetail");
                     }
                   }
                 }}>
@@ -2000,6 +2020,7 @@ export default function PhoneApp() {
               </div>
               <div className="center">{clock}</div>
               <div className="right">
+                {mannerMode && <span style={{ fontSize: "9px" }}>🔇</span>}
                 {unreadCount > 0 && <span className="envelope-icon">✉</span>}
                 <div className="battery"><div className="battery-body"><div className="cell" /><div className="cell" /><div className="cell" /></div><div className="battery-tip" /></div>
               </div>
