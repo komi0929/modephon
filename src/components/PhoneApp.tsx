@@ -136,7 +136,10 @@ export default function PhoneApp() {
 
   // Camera state
   const [cameraCountdown, setCameraCountdown] = useState(-1);
-  const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string}[]>([]);
+  const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string; dataUrl?: string}[]>([]);
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraCaptureRef = useRef<HTMLCanvasElement>(null);
 
   // Internet sub page
   const [internetPage, setInternetPage] = useState("");
@@ -557,12 +560,27 @@ export default function PhoneApp() {
       setCameraCountdown((p) => {
         if (p <= 1) {
           clearInterval(interval);
-          // フラッシュ（0表示）→ 撮影完了
+          // フラッシュ（0表示）→ キャプチャ
           setTimeout(() => {
+            // 実カメラからフレームキャプチャ
+            let dataUrl: string | undefined;
+            if (cameraVideoRef.current && cameraVideoRef.current.readyState >= 2) {
+              const video = cameraVideoRef.current;
+              const canvas = cameraCaptureRef.current || document.createElement("canvas");
+              // ガラケー解像度: 120x90
+              canvas.width = 120;
+              canvas.height = 90;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.drawImage(video, 0, 0, 120, 90);
+                dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+              }
+            }
             const newPhoto = {
               id: `photo-${Date.now()}`,
               timestamp: new Date().toLocaleString("ja-JP"),
               label: `写真${String(photoGallery.length + 1).padStart(3, "0")}.jpg`,
+              dataUrl,
             };
             setPhotoGallery((prev) => [newPhoto, ...prev]);
             setCameraCountdown(-1);
@@ -816,6 +834,34 @@ export default function PhoneApp() {
       renderProgressiveImage(detailImageRef.current, selectedMessage.image_url, { maxWidth: 180, maxHeight: 140, sliceHeight: 2, delayMs: 50 });
     }
   }, [screen, selectedMessage]);
+
+  // --- Camera stream lifecycle ---
+  useEffect(() => {
+    if (screen === "camera") {
+      // カメラ起動
+      navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment", width: { ideal: 320 }, height: { ideal: 240 } } })
+        .then((stream) => {
+          cameraStreamRef.current = stream;
+          if (cameraVideoRef.current) {
+            cameraVideoRef.current.srcObject = stream;
+            cameraVideoRef.current.play().catch(() => {});
+          }
+        })
+        .catch(() => { /* カメラ許可拒否時はダミー表示 */ });
+    } else {
+      // カメラ停止
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+        cameraStreamRef.current = null;
+      }
+    }
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+        cameraStreamRef.current = null;
+      }
+    };
+  }, [screen]);
 
   // --- Helpers ---
   const getSenderName = useCallback((email: string) => {
@@ -1192,16 +1238,17 @@ export default function PhoneApp() {
         {/* ファインダー */}
         <div style={{ width: "85%", aspectRatio: "4/3", background: "linear-gradient(135deg, #1a2a1a 0%, #0d1a0d 100%)", border: "2px solid #444", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 2, position: "relative", overflow: "hidden" }}>
           {/* ファインダーグリッド */}
-          <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(0deg, transparent, transparent 32%, rgba(255,255,255,0.03) 32%, rgba(255,255,255,0.03) 33.3%), repeating-linear-gradient(90deg, transparent, transparent 49%, rgba(255,255,255,0.03) 49%, rgba(255,255,255,0.03) 50%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(0deg, transparent, transparent 32%, rgba(255,255,255,0.03) 32%, rgba(255,255,255,0.03) 33.3%), repeating-linear-gradient(90deg, transparent, transparent 49%, rgba(255,255,255,0.03) 49%, rgba(255,255,255,0.03) 50%)", pointerEvents: "none", zIndex: 2 }} />
           {/* クロスヘア */}
-          <div style={{ position: "absolute", width: 24, height: 24, border: "1px solid rgba(255,255,255,0.3)", borderRadius: "50%" }} />
-          <div style={{ position: "absolute", width: 1, height: 12, background: "rgba(255,255,255,0.2)", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
-          <div style={{ position: "absolute", width: 12, height: 1, background: "rgba(255,255,255,0.2)", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
+          <div style={{ position: "absolute", width: 24, height: 24, border: "1px solid rgba(255,255,255,0.3)", borderRadius: "50%", zIndex: 2 }} />
+          {/* リアルカメラプレビュー */}
+          <video ref={cameraVideoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 1, imageRendering: "pixelated" }} />
+          <canvas ref={cameraCaptureRef} style={{ display: "none" }} />
           {/* ステータス */}
-          <div style={{ position: "absolute", top: 4, left: 6, fontSize: "7px", color: "#4a4" }}>● REC</div>
-          <div style={{ position: "absolute", top: 4, right: 6, fontSize: "7px", color: "#aaa" }}>VGA</div>
-          <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: "7px", color: "#aaa" }}>{photoGallery.length}枚</div>
-          <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: "7px", color: "#aaa" }}>📷0.3MP</div>
+          <div style={{ position: "absolute", top: 4, left: 6, fontSize: "7px", color: "#4a4", zIndex: 3 }}>● REC</div>
+          <div style={{ position: "absolute", top: 4, right: 6, fontSize: "7px", color: "#aaa", zIndex: 3 }}>VGA</div>
+          <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: "7px", color: "#aaa", zIndex: 3 }}>{photoGallery.length}枚</div>
+          <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: "7px", color: "#aaa", zIndex: 3 }}>📷0.3MP</div>
           {/* カウントダウン */}
           {cameraCountdown > 0 && (
             <div style={{ fontSize: "28px", color: "#f44", fontWeight: "bold", animation: "cursorBlink 0.5s steps(1) infinite" }}>{cameraCountdown}</div>
@@ -1232,8 +1279,12 @@ export default function PhoneApp() {
     <div className="screen-enter">
       <div className="screen-title">📷 撮影完了</div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: 12, gap: 8 }}>
-        <div style={{ width: "80%", aspectRatio: "4/3", background: "linear-gradient(135deg, #2a3a2a 0%, #1a2a1a 100%)", border: "2px solid #555", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: "32px" }}>📸</div>
+        <div style={{ width: "80%", aspectRatio: "4/3", background: "linear-gradient(135deg, #2a3a2a 0%, #1a2a1a 100%)", border: "2px solid #555", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          {photoGallery.length > 0 && photoGallery[0].dataUrl ? (
+            <img src={photoGallery[0].dataUrl} alt="撮影写真" style={{ width: "100%", height: "100%", objectFit: "cover", imageRendering: "pixelated" }} />
+          ) : (
+            <div style={{ fontSize: "32px" }}>📸</div>
+          )}
         </div>
         <div style={{ fontSize: "10px", textAlign: "center" }}>保存しました！</div>
         <div style={{ fontSize: "9px", opacity: 0.5, textAlign: "center" }}>
@@ -1264,7 +1315,9 @@ export default function PhoneApp() {
         ) : photoGallery.map((photo, i) => (
           <div key={photo.id} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
             onClick={() => setSelectedIndex(i)}>
-            <div className="icon" style={{ fontSize: "16px" }}>🖼</div>
+            <div className="icon" style={{ width: 28, height: 21, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", border: "1px solid rgba(0,0,0,0.1)", borderRadius: 1, background: "#1a2a1a" }}>\r
+              {photo.dataUrl ? <img src={photo.dataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", imageRendering: "pixelated" }} /> : <span style={{ fontSize: "14px" }}>🖼</span>}\r
+            </div>
             <div className="label">
               <div style={{ fontSize: "10px" }}>{photo.label}</div>
               <div style={{ fontSize: "8px", opacity: 0.5 }}>{photo.timestamp} / 約15KB</div>
