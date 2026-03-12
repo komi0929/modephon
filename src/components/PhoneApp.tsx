@@ -287,6 +287,17 @@ export default function PhoneApp() {
 
   // --- Handle numpad key press ---
   const handleNumpadKey = useCallback((key: string) => {
+    // idle画面での数字キーショートカット（実機準拠）
+    if (screen === "idle" && !isInputActive) {
+      vibrate(8);
+      const shortcutMap: Record<string, () => void> = {
+        "1": () => pushScreen("inbox"),
+        "2": () => { setComposeTo(""); setComposeSubject(""); setComposeBody(""); setComposeImage(null); setComposeImagePreviewUrl(null); setComposeField("to"); setToggleState(createInitialState()); pushScreen("compose"); },
+        "3": () => pushScreen("mainMenu"),
+        "0": () => pushScreen("mainMenu"),
+      };
+      if (shortcutMap[key]) { shortcutMap[key](); return; }
+    }
     if (!isInputActive) return;
     vibrate(8);
 
@@ -371,17 +382,30 @@ export default function PhoneApp() {
       return;
     }
     if (isInputActive) return;
-    setSelectedIndex((prev) => prev + 1);
-  }, [isInputActive, screen, composeField, flushToggleInput]);
+    // 画面ごとの上限を設定
+    const maxMap: Partial<Record<Screen, number>> = {
+      mainMenu: 8, inbox: messages.length - 1, outbox: sentMessages.length - 1,
+      settings: 5, addressBook: ALL_NPCS.length - 1, internet: 6,
+      addressDetail: 1, dataFolder: 2,
+    };
+    const max = maxMap[screen] ?? 99;
+    setSelectedIndex((prev) => Math.min(prev + 1, max));
+  }, [isInputActive, screen, composeField, flushToggleInput, messages.length, sentMessages.length]);
 
   const handleDpadLeft = useCallback(() => {
     if (isInputActive) return;
     if (screen === "mainMenu") setSelectedIndex((prev) => Math.max(0, prev - 1));
+    // 受信BOX↔送信BOX を左右で切替（ガラケーのタブ操作風）
+    if (screen === "outbox") { setSelectedIndex(0); setScreen("inbox"); }
+    if (screen === "inbox") { setSelectedIndex(0); setScreen("outbox"); }
   }, [isInputActive, screen]);
 
   const handleDpadRight = useCallback(() => {
     if (isInputActive) return;
-    if (screen === "mainMenu") setSelectedIndex((prev) => prev + 1);
+    if (screen === "mainMenu") setSelectedIndex((prev) => Math.min(prev + 1, 8));
+    // 受信BOX↔送信BOX を左右で切替
+    if (screen === "inbox") { setSelectedIndex(0); setScreen("outbox"); }
+    if (screen === "outbox") { setSelectedIndex(0); setScreen("inbox"); }
   }, [isInputActive, screen]);
 
   // --- Select / OK ---
@@ -1028,7 +1052,11 @@ export default function PhoneApp() {
 
   const renderInboxScreen = () => (
     <div className="screen-enter">
-      <div className="screen-title">受信BOX ({messages.length})</div>
+      <div className="screen-title" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: "8px", opacity: 0.4 }}>◀送信</span>
+        <span>受信BOX ({messages.length})</span>
+        <span style={{ fontSize: "8px", opacity: 0.4 }}>送信▶</span>
+      </div>
       <div className="viewport-scroll">
         {messages.length === 0 ? (
           <div style={{ padding: "24px", textAlign: "center", fontSize: "10px", opacity: 0.5 }}>ﾒｰﾙはありません</div>
@@ -1049,7 +1077,11 @@ export default function PhoneApp() {
 
   const renderOutboxScreen = () => (
     <div className="screen-enter">
-      <div className="screen-title">送信BOX ({sentMessages.length})</div>
+      <div className="screen-title" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: "8px", opacity: 0.4 }}>◀受信</span>
+        <span>送信BOX ({sentMessages.length})</span>
+        <span style={{ fontSize: "8px", opacity: 0.4 }}>受信▶</span>
+      </div>
       <div className="viewport-scroll">
         {sentMessages.length === 0 ? (
           <div style={{ padding: "24px", textAlign: "center", fontSize: "10px", opacity: 0.5 }}>送信ﾒｰﾙはありません</div>
