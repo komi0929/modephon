@@ -1,9 +1,10 @@
-const CACHE_NAME = 'motephon-v2';
+const CACHE_NAME = 'motephon-v3';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
   '/icon-192x192.png',
   '/icon-512x512.png',
+  '/fonts/misaki_gothic.woff2',
 ];
 
 // Install: precache essential assets

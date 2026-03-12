@@ -524,14 +524,18 @@ export default function PhoneApp() {
       setCameraCountdown((p) => {
         if (p <= 1) {
           clearInterval(interval);
-          const newPhoto = {
-            id: `photo-${Date.now()}`,
-            timestamp: new Date().toLocaleString("ja-JP"),
-            label: `写真${String(photoGallery.length + 1).padStart(3, "0")}.jpg`,
-          };
-          setPhotoGallery((prev) => [newPhoto, ...prev]);
-          setCameraCountdown(-1);
-          return -1;
+          // フラッシュ（0表示）→ 撮影完了
+          setTimeout(() => {
+            const newPhoto = {
+              id: `photo-${Date.now()}`,
+              timestamp: new Date().toLocaleString("ja-JP"),
+              label: `写真${String(photoGallery.length + 1).padStart(3, "0")}.jpg`,
+            };
+            setPhotoGallery((prev) => [newPhoto, ...prev]);
+            setCameraCountdown(-1);
+            pushScreen("cameraShot");
+          }, 400);
+          return 0; // フラッシュ表示
         }
         return p - 1;
       });
@@ -1988,6 +1992,10 @@ export default function PhoneApp() {
                     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                     if (historyMessages.length > 0) {
                       setSelectedMessage(historyMessages[0]);
+                      pushScreen("messageDetail");
+                    } else {
+                      // 履歴がない場合のフィードバック
+                      setSelectedMessage({ id: "empty", sender_email: selectedContact.email, receiver_email: "", subject: "履歴なし", body: `${selectedContact.displayName}とのﾒｰﾙ履歴はまだありません。\n\nﾒｰﾙを書いてみよう！`, is_read: true, created_at: new Date().toISOString() });
                       pushScreen("messageDetail");
                     }
                   }

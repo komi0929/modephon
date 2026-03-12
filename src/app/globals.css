@@ -927,3 +927,36 @@ body {
     border-right: 1px solid #333;
   }
 }
+
+/* ==========================================
+   モノクロ(STN)モード - 非カラー時の補正
+   ========================================== */
+.app-shell:not(.lcd-color-mode) .lcd-screen {
+  background: #9ca87c;
+  color: #2a2a2a;
+}
+.app-shell:not(.lcd-color-mode) .error-text {
+  color: #333;
+  font-weight: bold;
+}
+.app-shell:not(.lcd-color-mode) .status-bar {
+  background: rgba(0, 0, 0, 0.08);
+  border-bottom-color: rgba(0, 0, 0, 0.15);
+}
+.app-shell:not(.lcd-color-mode) .softkey-bar {
+  background: rgba(0, 0, 0, 0.08);
+  border-top-color: rgba(0, 0, 0, 0.15);
+}
+.app-shell:not(.lcd-color-mode) .screen-title {
+  background: rgba(0, 0, 0, 0.12);
+}
+.app-shell:not(.lcd-color-mode) .menu-item.selected,
+.app-shell:not(.lcd-color-mode) .grid-menu-item.selected,
+.app-shell:not(.lcd-color-mode) .message-item.selected,
+.app-shell:not(.lcd-color-mode) .settings-item.selected {
+  background: rgba(0, 0, 0, 0.2);
+}
+.app-shell:not(.lcd-color-mode) .new-mail-popup {
+  background: rgba(0, 0, 0, 0.85);
+  color: #9ca87c;
+}
