@@ -136,7 +136,9 @@ export default function PhoneApp() {
 
   // Camera state
   const [cameraCountdown, setCameraCountdown] = useState(-1);
-  const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string; dataUrl?: string}[]>([]);
+  const [photoGallery, setPhotoGallery] = useState<{id: string; timestamp: string; label: string; dataUrl?: string}[]>(() => {
+    try { const saved = localStorage.getItem("mp_photos"); return saved ? JSON.parse(saved) : []; } catch { return []; }
+  });
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraCaptureRef = useRef<HTMLCanvasElement>(null);
@@ -217,6 +219,8 @@ export default function PhoneApp() {
   useEffect(() => { try { localStorage.setItem("mp_wallpaper", wallpaper); } catch {} }, [wallpaper]);
   useEffect(() => { try { localStorage.setItem("mp_fontsize", fontSize); } catch {} }, [fontSize]);
   useEffect(() => { try { localStorage.setItem("mp_brightness", String(brightness)); } catch {} }, [brightness]);
+  // Photo gallery persistence (save up to 20 photos)
+  useEffect(() => { try { const toSave = photoGallery.slice(0, 20); localStorage.setItem("mp_photos", JSON.stringify(toSave)); } catch {} }, [photoGallery]);
 
   // --- Clock ---
   useEffect(() => {
@@ -1289,13 +1293,19 @@ export default function PhoneApp() {
         <div style={{ fontSize: "10px", textAlign: "center" }}>保存しました！</div>
         <div style={{ fontSize: "9px", opacity: 0.5, textAlign: "center" }}>
           {photoGallery.length > 0 ? photoGallery[0].label : ""}<br/>
-          VGA / 約15KB
+          VGA / {photoGallery.length > 0 && photoGallery[0].dataUrl ? `${Math.round(photoGallery[0].dataUrl.length * 0.75 / 1024)}KB` : "約15KB"}
         </div>
         {/* メールに添付ショートカット */}
         <div className="menu-item" style={{ cursor: "pointer", marginTop: 4, justifyContent: "center", width: "80%" }}
           onClick={() => {
+            const latestPhoto = photoGallery.length > 0 ? photoGallery[0] : null;
             setComposeTo(""); setComposeSubject("写メ☆"); setComposeBody("");
-            setComposeImage(null); setComposeImagePreviewUrl(null);
+            if (latestPhoto?.dataUrl) {
+              setComposeImagePreviewUrl(latestPhoto.dataUrl);
+              setComposeImage(null); // dataUrl直接使用
+            } else {
+              setComposeImage(null); setComposeImagePreviewUrl(null);
+            }
             setComposeField("to"); setToggleState(createInitialState());
             pushScreen("compose");
           }}>
@@ -1320,7 +1330,7 @@ export default function PhoneApp() {
             </div>
             <div className="label">
               <div style={{ fontSize: "10px" }}>{photo.label}</div>
-              <div style={{ fontSize: "8px", opacity: 0.5 }}>{photo.timestamp} / 約15KB</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>{photo.timestamp} / {photo.dataUrl ? `${Math.round(photo.dataUrl.length * 0.75 / 1024)}KB` : "約15KB"}</div>
             </div>
           </div>
         ))}
@@ -1515,12 +1525,13 @@ export default function PhoneApp() {
   // ========== DATA FOLDER SCREEN ==========
   const renderDataScreen = () => {
     const imgCount = photoGallery.length + sentMessages.filter((m) => m.image_url).length + messages.filter((m) => m.image_url).length;
-    const totalKb = Math.round((messages.length + sentMessages.length) * 0.8 + photoGallery.length * 15);
+    const photoTotalKb = photoGallery.reduce((acc, p) => acc + (p.dataUrl ? Math.round(p.dataUrl.length * 0.75 / 1024) : 15), 0);
+    const totalKb = Math.round((messages.length + sentMessages.length) * 0.8 + photoTotalKb);
     const items = [
       { icon: "📨", label: "受信ﾒｰﾙ", value: `${messages.length}件` },
       { icon: "📤", label: "送信ﾒｰﾙ", value: `${sentMessages.length}件` },
       { icon: "🖼", label: "画像", value: `${imgCount}件` },
-      { icon: "🎵", label: "着信音/着ﾒﾛ", value: "5件" },
+      { icon: "🎵", label: "着信音/着ﾒﾛ", value: "5曲" },
     ];
     return (
       <div className="screen-enter">
