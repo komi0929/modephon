@@ -333,6 +333,8 @@ export default function PhoneApp() {
           const msg = messages[idx];
           setSelectedMessage(msg);
           setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, is_read: true } : m)));
+          // DB更新
+          try { supabase.from("messages").update({ is_read: true }).eq("id", msg.id).then(); } catch {}
           pushScreen("messageDetail");
         }
         break;
@@ -353,7 +355,7 @@ export default function PhoneApp() {
         }
         break;
       case "settings":
-        handleSettingsSelect();
+        handleSettingsSelect(selectedIndex);
         break;
       case "addressBook":
         if (ALL_NPCS[selectedIndex]) {
@@ -374,18 +376,18 @@ export default function PhoneApp() {
         handleCameraShoot();
         break;
       case "internet":
-        handleInternetSelect();
+        handleInternetSelect(selectedIndex);
         break;
       case "internetPage":
         break;
       case "dataFolder":
-        handleDataFolderSelect();
+        handleDataFolderSelect(selectedIndex);
         break;
       case "photoGallery":
         break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState, supabase]);
 
   const handleMainMenuSelect = useCallback((menuIdx?: number) => {
     const items = ["inbox", "compose", "outbox", "camera", "addressBook", "internet", "settings", "data", "profile"] as const;
@@ -405,12 +407,12 @@ export default function PhoneApp() {
       case "data": pushScreen("dataFolder"); break;
       case "profile": pushScreen("profile"); break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex, pushScreen]);
 
   // --- Settings select ---
-  const handleSettingsSelect = useCallback(() => {
-    switch (selectedIndex) {
+  const handleSettingsSelect = useCallback((idx?: number) => {
+    const i = idx ?? selectedIndex;
+    switch (i) {
       case 0: setColorMode((p) => !p); break;
       case 1: setMannerMode((p) => !p); break;
       case 2: {
@@ -460,19 +462,21 @@ export default function PhoneApp() {
   }, [selectedIndex, photoGallery.length, pushScreen]);
 
   // --- Internet select ---
-  const handleInternetSelect = useCallback(() => {
+  const handleInternetSelect = useCallback((idx?: number) => {
+    const i = idx ?? selectedIndex;
     const pages = ["yahoo", "weather", "news", "melody", "wallpapers", "fortune"];
-    if (selectedIndex < pages.length) {
-      setInternetPage(pages[selectedIndex]);
+    if (i < pages.length) {
+      setInternetPage(pages[i]);
       pushScreen("internetPage");
     }
   }, [selectedIndex, pushScreen]);
 
   // --- Data folder select ---
-  const handleDataFolderSelect = useCallback(() => {
+  const handleDataFolderSelect = useCallback((idx?: number) => {
+    const i = idx ?? selectedIndex;
     const cats = ["received", "sent", "images", "melodies"];
-    if (selectedIndex < cats.length) {
-      setDataFolderCategory(cats[selectedIndex]);
+    if (i < cats.length) {
+      setDataFolderCategory(cats[i]);
       pushScreen("dataFolderSub");
     }
   }, [selectedIndex, pushScreen]);
@@ -725,7 +729,6 @@ export default function PhoneApp() {
         }
         break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, selectedMessage, pushScreen]);
 
   // --- Get current toggle candidates ---
@@ -979,7 +982,7 @@ export default function PhoneApp() {
         <div className="viewport-scroll">
           {settingsItems.map((item, i) => (
             <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
-              onClick={() => { setSelectedIndex(i); handleSettingsSelect(); }}>
+              onClick={() => { setSelectedIndex(i); handleSettingsSelect(i); }}>
               <span>{item.icon} {item.label}</span>
               <span className="value">{item.value}</span>
             </div>
@@ -1065,7 +1068,7 @@ export default function PhoneApp() {
         <div className="viewport-scroll">
           {["Yahoo!ｹｰﾀｲ", "天気予報", "ﾆｭｰｽ速報", "着ﾒﾛ♪", "待受画像DL", "今日の占い"].map((item, i) => (
             <div key={i} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
-              onClick={() => { setSelectedIndex(i); handleInternetSelect(); }}>
+              onClick={() => { setSelectedIndex(i); handleInternetSelect(i); }}>
               <div className="icon">{["🔍", "☀", "📰", "🎵", "🖼", "🔮"][i]}</div>
               <div className="label" style={{ fontSize: "11px" }}>{item}</div>
             </div>
@@ -1186,7 +1189,7 @@ export default function PhoneApp() {
         <div className="viewport-scroll">
           {items.map((item, i) => (
             <div key={i} className={`settings-item ${selectedIndex === i ? "selected" : ""}`}
-              onClick={() => { setSelectedIndex(i); handleDataFolderSelect(); }}>
+              onClick={() => { setSelectedIndex(i); handleDataFolderSelect(i); }}>
               <span>{item.icon} {item.label}</span>
               <span className="value">{item.value}</span>
             </div>
