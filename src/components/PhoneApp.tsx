@@ -385,8 +385,9 @@ export default function PhoneApp() {
     // 画面ごとの上限を設定
     const maxMap: Partial<Record<Screen, number>> = {
       mainMenu: 8, inbox: messages.length - 1, outbox: sentMessages.length - 1,
-      settings: 5, addressBook: ALL_NPCS.length - 1, internet: 6,
-      addressDetail: 1, dataFolder: 2,
+      settings: 7, addressBook: ALL_NPCS.length - 1, internet: 5,
+      addressDetail: 1, dataFolder: 3, photoGallery: photoGallery.length - 1,
+      camera: 1,
     };
     const max = maxMap[screen] ?? 99;
     setSelectedIndex((prev) => Math.min(prev + 1, max));
@@ -1118,7 +1119,7 @@ export default function PhoneApp() {
             {composeField === "subject" && <span className="cursor-blink" />}
           </div>
         </div>
-        <div className="compose-body-area" onClick={() => { flushToggleInput(); setComposeField("body"); setToggleState(createInitialState()); }}
+        <div className="compose-body-area" onClick={() => { flushToggleInput(); setComposeField("body"); setToggleState(createInitialState("", "hiragana")); }}
           style={{ flex: 1, cursor: "text" }}>
           {getFieldDisplay(composeBody, "body")}
           {composeField === "body" && <span className="cursor-blink" />}
@@ -1238,6 +1239,17 @@ export default function PhoneApp() {
         <div style={{ fontSize: "9px", opacity: 0.5, textAlign: "center" }}>
           {photoGallery.length > 0 ? photoGallery[0].label : ""}<br/>
           VGA / 約15KB
+        </div>
+        {/* メールに添付ショートカット */}
+        <div className="menu-item" style={{ cursor: "pointer", marginTop: 4, justifyContent: "center", width: "80%" }}
+          onClick={() => {
+            setComposeTo(""); setComposeSubject("写メ☆"); setComposeBody("");
+            setComposeImage(null); setComposeImagePreviewUrl(null);
+            setComposeField("to"); setToggleState(createInitialState());
+            pushScreen("compose");
+          }}>
+          <div className="icon">✉</div>
+          <div className="label" style={{ fontSize: "10px" }}>ﾒｰﾙに添付</div>
         </div>
       </div>
     </div>
