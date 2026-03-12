@@ -35,6 +35,21 @@ export class LatencyQueue<T> {
     this.startProcessing();
   }
 
+  /**
+   * カスタム遅延でキューに追加（NPC返信用）
+   * @param item 配信するアイテム
+   * @param delayMs 遅延ミリ秒（±20%のランダム幅を追加）
+   */
+  enqueueWithDelay(item: T, delayMs: number): void {
+    const jitter = delayMs * 0.2;
+    const delay = delayMs - jitter + Math.random() * jitter * 2;
+    this.queue.push({
+      data: item,
+      deliverAt: Date.now() + delay,
+    });
+    this.startProcessing();
+  }
+
   private startProcessing(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {

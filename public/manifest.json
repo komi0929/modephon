@@ -1,0 +1,27 @@
+{
+  "name": "motephon - 写ﾒｰﾙ体験",
+  "short_name": "motephon",
+  "description": "2000年代初頭の写メール体験を完全再現したP2Pメッセージングアプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#4466cc",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "entertainment"],
+  "lang": "ja",
+  "dir": "ltr"
+}

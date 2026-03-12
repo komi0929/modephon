@@ -623,7 +623,7 @@ export default function PhoneApp() {
         const res = await fetch("/api/npc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ npcEmail: npc.email, userMessage: body }) });
         if (res.ok) {
           const data = await res.json();
-          latencyQueue.enqueue({ id: `npc-reply-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: data.reply, is_read: false, created_at: new Date().toISOString() });
+          latencyQueue.enqueueWithDelay({ id: `npc-reply-${Date.now()}`, sender_email: npc.email, receiver_email: user?.virtual_email || "", subject: `Re: ${newMsg.subject}`, body: data.reply, is_read: false, created_at: new Date().toISOString() }, 600000);
         } else { generateFallbackNpcReply(npc.email, newMsg); }
       } catch { generateFallbackNpcReply(npc.email, newMsg); }
     }
@@ -638,7 +638,7 @@ export default function PhoneApp() {
       ? [`ぇ～ﾏﾁﾞで!?\nｳｹﾙんだけどww\n\nまたﾒｰﾙしてねぇ♪\n(^_^)v☆`, `ぉ返事ありがとぉ!!\nﾁｮｰ嬉しぃ～\n(≧∇≦)\n\nぁたしも写メ\n撮ったょ～♪♪`, `ﾏﾁﾞﾏﾁﾞ!?\nそれﾔﾊﾞｲんだけど!!\nwww\n\n今度ﾌﾟﾘ撮ろ～\n(*^o^*)`]
       : [`ﾏﾁﾞかょ～!!\nｳｹﾙww\n\nまたﾒｰﾙ\nしてこいよ～!\n('-'*)`, `ｵｯｽ!!\n返事ﾄﾞｰﾓ!!\n\n今ﾊﾟﾗﾊﾟﾗの\n練習中だし!!\n(笑)`, `ﾁｮｰ最高じゃね!?\nwww\n\n今度ｾﾝﾀｰ街\n行こうぜ～!!\n(\`・ω・´)`];
     const reply = replies[Math.floor(Math.random() * replies.length)];
-    latencyQueue.enqueue({ id: `npc-fallback-${Date.now()}`, sender_email: npcEmail, receiver_email: user?.virtual_email || "", subject: `Re: ${originalMsg.subject}`, body: reply, is_read: false, created_at: new Date().toISOString() });
+    latencyQueue.enqueueWithDelay({ id: `npc-fallback-${Date.now()}`, sender_email: npcEmail, receiver_email: user?.virtual_email || "", subject: `Re: ${originalMsg.subject}`, body: reply, is_read: false, created_at: new Date().toISOString() }, 600000);
   }, [latencyQueue, user]);
 
   // --- Image attachment ---
