@@ -53,7 +53,9 @@ type Screen =
   | "photoView"
   | "terms"
   | "confirmLogout"
-  | "confirmDelete";
+  | "confirmDelete"
+  | "contactPicker"
+  | "invite";
 
 interface Message {
   id: string;
@@ -71,6 +73,11 @@ interface UserProfile {
   id: string;
   virtual_email: string;
   display_name?: string;
+}
+
+interface Contact {
+  email: string;
+  name: string;
 }
 
 /* =========================================
@@ -162,6 +169,15 @@ export default function PhoneApp() {
   // Address book detail
   const [selectedContact, setSelectedContact] = useState<typeof ALL_NPCS[0] | null>(null);
 
+  // Contacts (アドレス帳)
+  const [contacts, setContacts] = useState<Contact[]>([]);
+
+  // 招待コード
+  const [inviteCode, setInviteCode] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(null);
+
   // Data folder sub
   const [dataFolderCategory, setDataFolderCategory] = useState("");
 
@@ -194,9 +210,10 @@ export default function PhoneApp() {
   // Register state
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regDisplayName, setRegDisplayName] = useState("");
   const [regError, setRegError] = useState("");
-  const [regStep, setRegStep] = useState<"email" | "password">("email");
-  const [regField, setRegField] = useState<"email" | "password">("email");
+  const [regStep, setRegStep] = useState<"email" | "name" | "password">("email");
+  const [regField, setRegField] = useState<"email" | "name" | "password">("email");
   const [isLogin, setIsLogin] = useState(false);
 
   // Toggle input state
@@ -291,6 +308,7 @@ export default function PhoneApp() {
 
     if (screen === "register") {
       if (regField === "email") setRegUsername((prev) => prev + text);
+      else if (regField === "name") setRegDisplayName((prev) => prev + text);
       else setRegPassword((prev) => prev + text);
     } else if (screen === "compose") {
       switch (composeField) {
@@ -368,6 +386,7 @@ export default function PhoneApp() {
       // Delete from actual field
       if (screen === "register") {
         if (regField === "email") setRegUsername((p) => p.slice(0, -1));
+        else if (regField === "name") setRegDisplayName((p) => p.slice(0, -1));
         else setRegPassword((p) => p.slice(0, -1));
       } else if (screen === "compose") {
         switch (composeField) {
@@ -419,10 +438,10 @@ export default function PhoneApp() {
     if (isInputActive) return;
     // 画面ごとの上限を設定
     const maxMap: Partial<Record<Screen, number>> = {
-      mainMenu: 8, inbox: messages.length - 1, outbox: sentMessages.length - 1,
-      settings: 10, addressBook: ALL_NPCS.length - 1, internet: 5,
+      mainMenu: 9, inbox: messages.length - 1, outbox: sentMessages.length - 1,
+      settings: 10, addressBook: contacts.length + 2, internet: 5,
       addressDetail: 1, dataFolder: 3, photoGallery: photoGallery.length - 1,
-      camera: 1,
+      camera: 1, contactPicker: contacts.length - 1,
     };
     const max = maxMap[screen] ?? 99;
     setSelectedIndex((prev) => Math.min(prev + 1, max));
@@ -438,7 +457,7 @@ export default function PhoneApp() {
 
   const handleDpadRight = useCallback(() => {
     if (isInputActive) return;
-    if (screen === "mainMenu") setSelectedIndex((prev) => Math.min(prev + 1, 8));
+    if (screen === "mainMenu") setSelectedIndex((prev) => Math.min(prev + 1, 9));
     // 受信BOX↔送信BOX を左右で切替
     if (screen === "inbox") { setSelectedIndex(0); setScreen("outbox"); }
     if (screen === "outbox") { setSelectedIndex(0); setScreen("inbox"); }
@@ -470,7 +489,9 @@ export default function PhoneApp() {
           setSelectedMessage(msg);
           setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, is_read: true } : m)));
           // DB更新
-          try { supabase.from("messages").update({ is_read: true }).eq("id", msg.id).then(); } catch {}
+          if (msg.id && !msg.id.startsWith("demo-")) {
+            supabase.from("messages").update({ is_read: true }).eq("id", msg.id).then();
+          }
           pushScreen("messageDetail");
         }
         break;
@@ -483,22 +504,44 @@ export default function PhoneApp() {
         break;
       case "compose":
         if (composeField === "to") {
-          flushToggleInput(); setToggleState(createInitialState()); setComposeField("subject");
+          // 宛先フィールドでOK押したらcontactPickerを開く
+          pushScreen("contactPicker");
         } else if (composeField === "subject") {
           flushToggleInput(); setToggleState(createInitialState()); setComposeField("body");
         } else {
           handleSendMessage();
         }
         break;
+      case "contactPicker":
+        if (contacts[selectedIndex]) {
+          const c = contacts[selectedIndex];
+          setComposeTo(c.email.split("@")[0]);
+          popScreen();
+          setComposeField("subject");
+          setToggleState(createInitialState());
+        }
+        break;
       case "settings":
         handleSettingsSelect(selectedIndex);
         break;
-      case "addressBook":
-        if (ALL_NPCS[selectedIndex]) {
-          setSelectedContact(ALL_NPCS[selectedIndex]);
-          pushScreen("addressDetail");
+      case "addressBook": {
+        if (selectedIndex < contacts.length) {
+          const contact = contacts[selectedIndex];
+          const npc = ALL_NPCS.find(n => n.email === contact.email);
+          if (npc) {
+            setSelectedContact(npc);
+            pushScreen("addressDetail");
+          } else {
+            // 人間の連絡先 → 直接compose
+            setComposeTo(contact.email.split("@")[0]);
+            setComposeSubject(""); setComposeBody("");
+            setComposeImage(null); setComposeImagePreviewUrl(null);
+            setComposeField("subject"); setToggleState(createInitialState());
+            pushScreen("compose");
+          }
         }
         break;
+      }
       case "addressDetail":
         if (selectedContact && selectedIndex === 0) {
           setComposeTo(selectedContact.email.split("@")[0]);
@@ -532,10 +575,10 @@ export default function PhoneApp() {
         break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState, supabase]);
+  }, [screen, selectedIndex, messages, sentMessages, isInputActive, toggleState, supabase, contacts]);
 
   const handleMainMenuSelect = useCallback((menuIdx?: number) => {
-    const items = ["inbox", "compose", "outbox", "camera", "addressBook", "internet", "settings", "data", "profile"] as const;
+    const items = ["inbox", "compose", "outbox", "camera", "addressBook", "internet", "settings", "data", "profile", "invite"] as const;
     const idx = Math.min(menuIdx ?? selectedIndex, items.length - 1);
     switch (items[idx]) {
       case "inbox": pushScreen("inbox"); break;
@@ -551,6 +594,9 @@ export default function PhoneApp() {
       case "internet": pushScreen("internet"); break;
       case "data": pushScreen("dataFolder"); break;
       case "profile": pushScreen("profile"); break;
+      case "invite":
+        setInviteCode(""); setInviteUrl("");
+        pushScreen("invite"); break;
     }
   }, [selectedIndex, pushScreen]);
 
@@ -675,32 +721,91 @@ export default function PhoneApp() {
     if (!user) return;
     const interval = setInterval(() => {
       loadMessages(user.virtual_email);
-    }, 30000); // 30秒ごとにポーリング
+    }, 15000); // 15秒ごとにポーリング
     return () => clearInterval(interval);
   }, [user, loadMessages]);
 
-  // --- Register (4桁数字) ---
+  // --- Load contacts from DB ---
+  const loadContacts = useCallback(async (virtualEmail: string) => {
+    try {
+      const { data } = await supabase.from("contacts").select("contact_email, contact_name").eq("owner_email", virtualEmail);
+      if (data && data.length > 0) {
+        setContacts(data.map((c: Record<string, unknown>) => ({ email: String(c.contact_email), name: String(c.contact_name || "") })));
+      } else {
+        // DBに連絡先がない場合、NPC連絡先をデフォルトで設定
+        const npcContacts = ALL_NPCS.map(n => ({ email: n.email, name: n.displayName }));
+        setContacts(npcContacts);
+      }
+    } catch {
+      // デモモード時
+      setContacts(ALL_NPCS.map(n => ({ email: n.email, name: n.displayName })));
+    }
+  }, [supabase]);
+
+  // --- Register NPC contacts in DB ---
+  const registerNpcContacts = useCallback(async (virtualEmail: string) => {
+    try {
+      for (const npc of ALL_NPCS) {
+        await supabase.from("contacts").upsert({
+          owner_email: virtualEmail,
+          contact_email: npc.email,
+          contact_name: npc.displayName,
+        }, { onConflict: "owner_email,contact_email" });
+      }
+    } catch {}
+  }, [supabase]);
+
+  // --- Read invite code from URL ---
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const inv = params.get("invite");
+      if (inv) setPendingInviteCode(inv);
+    } catch {}
+  }, []);
+
+  // --- Register (4桁数字 + 名前) ---
   const handleRegister = useCallback(async () => {
     let username = regUsername;
     let password = regPassword;
+    let displayName = regDisplayName;
     if (toggleState.text) {
       if (regField === "email") username += toggleState.text;
+      else if (regField === "name") displayName += toggleState.text;
       else password += toggleState.text;
-      setToggleState(createInitialState("", "number"));
+      setToggleState(createInitialState("", regField === "name" ? "hiragana" : "number"));
     }
 
+    // Step 1: 番号入力
     if (regStep === "email") {
-      if (regField === "email") {
-        if (!/^\d{4}$/.test(username)) { setRegError("4ケタの番号を入力してね"); return; }
-        setRegUsername(username);
+      if (!/^\d{4}$/.test(username)) { setRegError("4ケタの番号を入力してね"); return; }
+      setRegUsername(username);
+      if (isLogin) {
+        // ログイン時は名前スキップ → パスワードへ
         setRegStep("password");
         setRegField("password");
-        setRegError("");
-        setToggleState(createInitialState("", "number"));
-        return;
+      } else {
+        // 新規登録 → 名前入力へ
+        setRegStep("name");
+        setRegField("name");
       }
+      setRegError("");
+      setToggleState(createInitialState("", isLogin ? "number" : "hiragana"));
+      return;
     }
 
+    // Step 2: 名前入力（新規登録のみ）
+    if (regStep === "name") {
+      if (!displayName.trim()) { setRegError("名前を入力してね"); return; }
+      setRegDisplayName(displayName);
+      setRegStep("password");
+      setRegField("password");
+      setRegError("");
+      setToggleState(createInitialState("", "number"));
+      return;
+    }
+
+    // Step 3: パスワード入力
     if (!/^\d{4}$/.test(password)) {
       setRegError("4ケタの番号を入力してね"); return;
     }
@@ -708,60 +813,73 @@ export default function PhoneApp() {
 
     const virtualEmail = `${username}@modephon.ne.jp`;
     const authEmail = `${username}@modephon.app`;
-    // Supabase Authは6文字以上必要なので、パスワードをパディング
     const authPassword = `mp${password}xx`;
-    // ネットワーク/接続エラーかどうか判定するヘルパー
     const isNetworkError = (msg: string) =>
       ["placeholder", "fetch", "load failed", "Failed to fetch", "NetworkError", "network", "CORS", "ERR_"].some(
         (k) => msg.toLowerCase().includes(k.toLowerCase())
       );
 
+    const finalName = isLogin ? username : displayName;
+
     try {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (error) {
-          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, username); return; }
+          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, finalName); return; }
           if (error.message.includes("Invalid login")) { setRegError("番号が違うょ…"); return; }
-          // その他の認証エラーもデモモードへ
-          enterDemoMode(virtualEmail, username); return;
+          enterDemoMode(virtualEmail, finalName); return;
         }
         if (data.user) {
           const { data: profile } = await supabase.from("users").select("*").eq("id", data.user.id).single();
-          const u: UserProfile = profile ? { id: data.user.id, virtual_email: profile.virtual_email, display_name: profile.display_name } : { id: data.user.id, virtual_email: virtualEmail, display_name: username };
+          const u: UserProfile = profile ? { id: data.user.id, virtual_email: profile.virtual_email, display_name: profile.display_name } : { id: data.user.id, virtual_email: virtualEmail, display_name: finalName };
           setUser(u);
           await loadMessages(u.virtual_email);
+          await loadContacts(u.virtual_email);
           setScreen("idle");
         }
       } else {
         const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
         if (error) {
-          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, username); return; }
+          if (isNetworkError(error.message)) { enterDemoMode(virtualEmail, finalName); return; }
           if (error.message.includes("already registered")) { setRegError("もう登録してあるょ！\nﾛｸﾞｲﾝに切替えてね"); setIsLogin(true); return; }
-          // その他のエラーもデモモードへ
-          enterDemoMode(virtualEmail, username); return;
+          enterDemoMode(virtualEmail, finalName); return;
         }
         if (data.user) {
-          await supabase.from("users").insert({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
-          setUser({ id: data.user.id, virtual_email: virtualEmail, display_name: username });
+          await supabase.from("users").insert({ id: data.user.id, virtual_email: virtualEmail, display_name: finalName });
+          setUser({ id: data.user.id, virtual_email: virtualEmail, display_name: finalName });
+          // NPC連絡先を自動登録
+          await registerNpcContacts(virtualEmail);
+          await loadContacts(virtualEmail);
+          // ウェルカムメッセージ
           for (const npc of ALL_NPCS) {
             latencyQueue.enqueue({ id: `welcome-${npc.email}-${Date.now()}`, sender_email: npc.email, receiver_email: virtualEmail, subject: npc.welcomeMessage.subject, body: npc.welcomeMessage.body, is_read: false, created_at: new Date().toISOString() });
+          }
+          // 招待コードがある場合、相互連絡先登録
+          if (pendingInviteCode) {
+            try {
+              await fetch(`/api/invite?code=${encodeURIComponent(pendingInviteCode)}&claimer=${encodeURIComponent(virtualEmail)}&claimerName=${encodeURIComponent(finalName)}`);
+              await loadContacts(virtualEmail);
+            } catch {}
+            setPendingInviteCode(null);
           }
           setScreen("idle");
         }
       }
     } catch {
-      enterDemoMode(virtualEmail, username);
+      enterDemoMode(virtualEmail, finalName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [regUsername, regPassword, regStep, regField, toggleState, supabase, latencyQueue, isLogin, loadMessages]);
+  }, [regUsername, regPassword, regDisplayName, regStep, regField, toggleState, supabase, latencyQueue, isLogin, loadMessages, loadContacts, registerNpcContacts, pendingInviteCode]);
 
   const enterDemoMode = useCallback((virtualEmail: string, displayName: string) => {
     setUser({ id: "demo-user", virtual_email: virtualEmail, display_name: displayName });
+    setContacts(ALL_NPCS.map(n => ({ email: n.email, name: n.displayName })));
     for (const msg of DEMO_MESSAGES) {
       latencyQueue.enqueue({ ...msg, receiver_email: virtualEmail, id: `${msg.id}-${Date.now()}` });
     }
     setScreen("idle");
   }, [latencyQueue]);
+
 
   // --- Send Message ---
   const handleSendMessage = useCallback(async () => {
@@ -901,8 +1019,11 @@ export default function PhoneApp() {
   // --- Helpers ---
   const getSenderName = useCallback((email: string) => {
     const npc = ALL_NPCS.find((n) => n.email === email);
-    return npc ? npc.displayName : email.split("@")[0];
-  }, []);
+    if (npc) return npc.displayName;
+    const contact = contacts.find((c) => c.email === email);
+    if (contact) return contact.name;
+    return email.split("@")[0];
+  }, [contacts]);
 
   const unreadCount = useMemo(() => messages.filter((m) => !m.is_read).length, [messages]);
 
@@ -929,7 +1050,9 @@ export default function PhoneApp() {
       case "userSearch": return ["戻る", "検索", ""];
       case "infraredSend": return ["戻る", "", ""];
       case "infraredReceive": return ["戻る", "受信", ""];
-      case "profileEdit": return ["戻る", "保存", ""];
+      case "profileEdit": return ["\u623b\u308b", "\u4fdd\u5b58", ""];
+      case "contactPicker": return ["\u623b\u308b", "\u9078\u629e", ""];
+      case "invite": return ["\u623b\u308b", "", ""];
       default: return ["", "", ""];
     }
   }, [screen, composeField]);
@@ -1009,6 +1132,8 @@ export default function PhoneApp() {
       case "terms": return renderTermsScreen();
       case "confirmLogout": return renderConfirmLogoutScreen();
       case "confirmDelete": return renderConfirmDeleteScreen();
+      case "contactPicker": return renderContactPickerScreen();
+      case "invite": return renderInviteScreen();
       default: return null;
     }
   };
@@ -1017,12 +1142,17 @@ export default function PhoneApp() {
     <div className="auth-screen screen-enter">
       <div className="title">modephon</div>
       <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: 8 }}>写ﾒｰﾙ ﾈｯﾄﾜｰｸ</div>
+      {pendingInviteCode && (
+        <div style={{ fontSize: "8px", background: "rgba(68,102,170,0.15)", padding: "3px 6px", borderRadius: 2, marginBottom: 6, textAlign: "center" }}>
+          📨 招待されてます！登録してね
+        </div>
+      )}
       <div style={{ fontSize: "10px", width: "100%", textAlign: "left", marginBottom: 4 }}>
-        {regStep === "email" ? "📱 ﾏｲ番号を決めよう" : "🔒 ﾊﾟｽﾜｰﾄﾞを決めよう"}
+        {regStep === "email" ? "📱 ﾏｲ番号を決めよう" : regStep === "name" ? "✍️ 名前を決めよう" : "🔒 ﾊﾟｽﾜｰﾄﾞを決めよう"}
         {isLogin && <span style={{ fontSize: "8px", opacity: 0.7 }}> (ﾛｸﾞｲﾝ)</span>}
       </div>
       <div style={{ fontSize: "9px", opacity: 0.6, marginBottom: 4, textAlign: "center" }}>
-        {regStep === "email" ? "好きな4ケタの数字を入力してね" : "4ケタの暗証番号を入力してね"}
+        {regStep === "email" ? "好きな4ケタの数字を入力してね" : regStep === "name" ? "英数字・ひらがななんでもOK！" : "4ケタの暗証番号を入力してね"}
       </div>
       {regStep === "email" ? (
         <>
@@ -1040,11 +1170,20 @@ export default function PhoneApp() {
             ))}
           </div>
         </>
+      ) : regStep === "name" ? (
+        <>
+          <div className={`auth-field-value ${regField === "name" ? "active" : ""}`}
+            onClick={() => setRegField("name")}>
+            <span style={{ fontSize: "16px" }}>{getFieldDisplay(regDisplayName, "name")}</span>
+            {regField === "name" && <span className="cursor-blink" />}
+          </div>
+          <div style={{ fontSize: "8px", opacity: 0.4, marginTop: 4, textAlign: "center" }}>※相手に表示される名前だよ</div>
+        </>
       ) : (
         <>
           <div className={`auth-field-value ${regField === "password" ? "active" : ""}`}
             onClick={() => setRegField("password")}>
-            <span style={{ letterSpacing: "8px", fontSize: "20px" }}>{"●".repeat(getFieldDisplay(regPassword, "password").length)}</span>
+            <span style={{ letterSpacing: "8px", fontSize: "20px" }}>{"\u25cf".repeat(getFieldDisplay(regPassword, "password").length)}</span>
             {regField === "password" && <span className="cursor-blink" />}
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: "4px", marginTop: 4 }}>
@@ -1114,6 +1253,7 @@ export default function PhoneApp() {
       { icon: "⚙", label: "設定" },
       { icon: "📁", label: "ﾃﾞｰﾀ" },
       { icon: "👤", label: "ﾌﾟﾛﾌｨｰﾙ" },
+      { icon: "📨", label: "招待する" },
     ];
     return (
       <div className="screen-enter">
@@ -1190,11 +1330,10 @@ export default function PhoneApp() {
     return (
       <div className="screen-enter" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         <div className="screen-title">ﾒｰﾙ作成</div>
-        <div className="compose-field" onClick={() => { flushToggleInput(); setComposeField("to"); setToggleState(createInitialState()); }}>
+        <div className="compose-field" onClick={() => { flushToggleInput(); setToggleState(createInitialState()); pushScreen("contactPicker"); }}>
           <span className="field-label">宛先</span>
           <div className={`field-value ${composeField === "to" ? "active" : ""}`}>
-            {getFieldDisplay(composeTo, "to")}
-            {composeField === "to" && <span className="cursor-blink" />}
+            {composeTo ? getSenderName(`${composeTo}@modephon.ne.jp`) : <span style={{ opacity: 0.4 }}>タップで選択 ▶</span>}
           </div>
         </div>
         <div className="compose-field" onClick={() => { flushToggleInput(); setComposeField("subject"); setToggleState(createInitialState()); }}>
@@ -2164,30 +2303,40 @@ export default function PhoneApp() {
 
   const renderAddressBookScreen = () => (
     <div className="screen-enter">
-      <div className="screen-title">📖 ｱﾄﾞﾚｽ帳 ({ALL_NPCS.length}件)</div>
+      <div className="screen-title">📖 ｱﾄﾞﾚｽ帳 ({contacts.length}件)</div>
       <div className="viewport-scroll">
-        {ALL_NPCS.map((npc, i) => (
-          <div key={npc.email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
-            onClick={() => {
-              setSelectedIndex(i);
-              setSelectedContact(npc);
-              pushScreen("addressDetail");
-            }}>
-            <div className="icon" style={{ fontSize: "16px" }}>👤</div>
-            <div className="label">
-              <div style={{ fontSize: "11px", fontWeight: "bold" }}>{npc.displayName}</div>
-              <div style={{ fontSize: "8px", opacity: 0.5 }}>{npc.email}</div>
+        {contacts.map((contact, i) => {
+          const npc = ALL_NPCS.find(n => n.email === contact.email);
+          return (
+            <div key={contact.email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+              onClick={() => {
+                setSelectedIndex(i);
+                if (npc) {
+                  setSelectedContact(npc);
+                  pushScreen("addressDetail");
+                } else {
+                  setComposeTo(contact.email.split("@")[0]);
+                  setComposeSubject(""); setComposeBody("");
+                  setComposeImage(null); setComposeImagePreviewUrl(null);
+                  setComposeField("subject"); setToggleState(createInitialState());
+                  pushScreen("compose");
+                }
+              }}>
+              <div className="icon" style={{ fontSize: "16px" }}>{npc ? "👤" : "📱"}</div>
+              <div className="label">
+                <div style={{ fontSize: "11px", fontWeight: "bold" }}>{contact.name}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5 }}>{contact.email}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {/* 赤外線通信 & 番号検索ボタン */}
         <div style={{ borderTop: "1px dashed rgba(0,0,0,0.15)", marginTop: 6, paddingTop: 6 }}>
           {/* 赤外線送信 */}
-          <div className={`menu-item ${selectedIndex === ALL_NPCS.length ? "selected" : ""}`}
+          <div className={`menu-item ${selectedIndex === contacts.length ? "selected" : ""}`}
             onClick={async () => {
               setIrCode(""); setIrCountdown(-1); setIrResult(null);
               pushScreen("infraredSend");
-              // コード発行
               try {
                 const res = await fetch("/api/infrared", {
                   method: "POST",
@@ -2198,7 +2347,6 @@ export default function PhoneApp() {
                   const data = await res.json();
                   setIrCode(data.code);
                   setIrCountdown(data.expiresIn || 120);
-                  // カウントダウン開始
                   if (irTimerRef.current) clearInterval(irTimerRef.current);
                   irTimerRef.current = setInterval(() => {
                     setIrCountdown(p => {
@@ -2219,7 +2367,7 @@ export default function PhoneApp() {
             </div>
           </div>
           {/* 赤外線受信 */}
-          <div className={`menu-item ${selectedIndex === ALL_NPCS.length + 1 ? "selected" : ""}`}
+          <div className={`menu-item ${selectedIndex === contacts.length + 1 ? "selected" : ""}`}
             onClick={() => {
               setIrInputCode(""); setIrResult(null); setIrLoading(false);
               setToggleState(createInitialState("", "number"));
@@ -2232,7 +2380,7 @@ export default function PhoneApp() {
             </div>
           </div>
           {/* 番号検索 */}
-          <div className={`menu-item ${selectedIndex === ALL_NPCS.length + 2 ? "selected" : ""}`}
+          <div className={`menu-item ${selectedIndex === contacts.length + 2 ? "selected" : ""}`}
             onClick={() => {
               setSearchQuery(""); setSearchResults([]);
               setToggleState(createInitialState("", "number"));
@@ -2248,6 +2396,111 @@ export default function PhoneApp() {
       </div>
     </div>
   );
+
+  // ========== CONTACT PICKER SCREEN ==========
+  const renderContactPickerScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📖 送信先を選択</div>
+      <div className="viewport-scroll">
+        {contacts.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", fontSize: "10px", opacity: 0.5 }}>連絡先がありません</div>
+        ) : contacts.map((contact, i) => (
+          <div key={contact.email} className={`menu-item ${selectedIndex === i ? "selected" : ""}`}
+            onClick={() => {
+              setComposeTo(contact.email.split("@")[0]);
+              popScreen();
+              setComposeField("subject");
+              setToggleState(createInitialState());
+            }}>
+            <div className="icon" style={{ fontSize: "16px" }}>
+              {ALL_NPCS.find(n => n.email === contact.email) ? "🤖" : "👤"}
+            </div>
+            <div className="label">
+              <div style={{ fontSize: "11px", fontWeight: "bold" }}>{contact.name}</div>
+              <div style={{ fontSize: "8px", opacity: 0.5 }}>{contact.email}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ========== INVITE SCREEN ==========
+  const renderInviteScreen = () => (
+    <div className="screen-enter">
+      <div className="screen-title">📨 友達を招待</div>
+      <div style={{ padding: 12, textAlign: "center" }}>
+        <div style={{ fontSize: "10px", opacity: 0.7, marginBottom: 8, lineHeight: 1.6 }}>
+          招待ﾘﾝｸを送って<br/>友達とﾒｰﾙしよう♪
+        </div>
+        <div style={{ fontSize: "8px", opacity: 0.4, marginBottom: 12 }}>
+          ※リンクは24時間有効です<br/>
+          ※登録すると相互にアドレス帳に追加されます
+        </div>
+        {inviteUrl ? (
+          <>
+            <div style={{
+              background: "rgba(0,0,0,0.06)",
+              padding: "8px",
+              borderRadius: 2,
+              fontSize: "8px",
+              wordBreak: "break-all",
+              marginBottom: 8,
+              border: "1px solid rgba(0,0,0,0.1)",
+            }}>
+              {inviteUrl}
+            </div>
+            <div
+              className="menu-item selected"
+              style={{ justifyContent: "center", padding: "6px 0" }}
+              onClick={() => {
+                try {
+                  navigator.clipboard.writeText(inviteUrl);
+                  setActionToast("📋 ｺﾋﾟｰしました！");
+                  setTimeout(() => setActionToast(null), 2000);
+                } catch {
+                  setActionToast("ｺﾋﾟｰに失敗しました");
+                  setTimeout(() => setActionToast(null), 2000);
+                }
+              }}
+            >
+              <div className="icon">📋</div>
+              <div className="label" style={{ fontSize: "11px" }}>ﾘﾝｸをｺﾋﾟｰ</div>
+            </div>
+          </>
+        ) : (
+          <div
+            className="menu-item selected"
+            style={{ justifyContent: "center", padding: "6px 0", opacity: inviteLoading ? 0.5 : 1 }}
+            onClick={async () => {
+              if (inviteLoading) return;
+              setInviteLoading(true);
+              try {
+                const res = await fetch("/api/invite", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ inviterEmail: user?.virtual_email, inviterName: user?.display_name }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setInviteCode(data.code);
+                  setInviteUrl(data.url);
+                }
+              } catch {
+                setActionToast("エラーが発生しました");
+                setTimeout(() => setActionToast(null), 2000);
+              }
+              setInviteLoading(false);
+            }}
+          >
+            <div className="icon">{inviteLoading ? "⏳" : "📨"}</div>
+            <div className="label" style={{ fontSize: "11px" }}>{inviteLoading ? "生成中..." : "招待ﾘﾝｸを発行"}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
 
   const renderAddressDetailScreen = () => {
     if (!selectedContact) return null;
